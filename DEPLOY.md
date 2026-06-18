@@ -2,11 +2,11 @@
 
 ## Architecture
 
-| Service | Host | Purpose |
-|---------|------|---------|
-| **Frontend** | Vercel | React app |
-| **Backend** | Railway or Render | Razorpay links + webhooks |
-| **Database** | Supabase | Already hosted |
+| Service | Host | Cost |
+|---------|------|------|
+| **Frontend** | Vercel | Free |
+| **Backend** | Render (recommended) | Free tier |
+| **Database** | Supabase | Free tier |
 
 ---
 
@@ -20,82 +20,136 @@ In order:
 3. `supabase/migrations/003_gst.sql`
 4. `supabase/migrations/004_bill_constraints.sql`
 
-### 2. Push code to GitHub
+### 2. Code on GitHub
 
-```bash
-cd billingSystem
-git init
-git add .
-git commit -m "Initial dairy ledger app"
-# Create repo on GitHub, then:
-git remote add origin https://github.com/YOUR_USER/billingSystem.git
-git push -u origin main
-```
-
-Do **not** commit `.env` files (they are in `.gitignore`).
+Repo: `https://github.com/itsPrashantsingh/DairyLedger`
 
 ---
 
-## Deploy backend (Railway — recommended)
+## Deploy backend — Render (free, no trial)
 
-1. Go to [railway.app](https://railway.app) → New Project → Deploy from GitHub repo
-2. Set **Root Directory** to `backend`
-3. Start command: `npm start`
+Render’s **free web service** does not expire after 30 days (unlike Railway’s trial).
+
+**Trade-off:** The service **sleeps after ~15 minutes** of no traffic. The first request after sleep takes **30–60 seconds** to wake up. Razorpay webhooks still work — Razorpay retries if the first attempt times out.
+
+### Steps
+
+1. Go to [render.com](https://render.com) → Sign up with GitHub
+2. **New** → **Web Service** → connect `itsPrashantsingh/DairyLedger`
+3. Settings:
+
+| Setting | Value |
+|---------|--------|
+| **Name** | `dairy-ledger-api` |
+| **Region** | Singapore (closest to India) |
+| **Root Directory** | `backend` |
+| **Runtime** | Node |
+| **Build Command** | `npm install` |
+| **Start Command** | `npm start` |
+| **Instance Type** | **Free** |
+
 4. Add environment variables:
 
 | Variable | Value |
 |----------|--------|
 | `RAZORPAY_KEY_ID` | From Razorpay dashboard |
 | `RAZORPAY_KEY_SECRET` | From Razorpay dashboard |
-| `RAZORPAY_WEBHOOK_SECRET` | From Razorpay webhooks (step below) |
+| `RAZORPAY_WEBHOOK_SECRET` | After creating webhook (below) |
 | `SUPABASE_URL` | `https://xxx.supabase.co` (no `/rest/v1/`) |
 | `SUPABASE_SERVICE_KEY` | Supabase → Settings → service_role key |
 | `FRONTEND_URL` | Your Vercel URL (set after frontend deploy) |
-| `API_KEY` | Random secret string you generate |
+| `API_KEY` | Long random secret you generate |
 
-5. Railway gives you a URL like `https://billing-backend-production.up.railway.app`
-6. Test: open `https://YOUR-BACKEND-URL/health` → should show `{"ok":true}`
+5. Click **Create Web Service**
+6. You get a URL like `https://dairy-ledger-api.onrender.com`
+7. Test: `https://YOUR-URL.onrender.com/health` → `{"ok":true}`
 
-### Razorpay webhook (production)
+> **Tip:** Open `/health` once before generating bills — wakes the server so Razorpay links are fast.
 
-1. Razorpay Dashboard → Settings → Webhooks → Add
-2. URL: `https://YOUR-BACKEND-URL/webhook/razorpay`
-3. Event: `payment_link.paid`
-4. Copy webhook secret → `RAZORPAY_WEBHOOK_SECRET` in Railway
+### Razorpay webhook
+
+1. Razorpay Dashboard → Settings → Webhooks → **Add New Webhook**
+2. URL: `https://YOUR-RENDER-URL.onrender.com/webhook/razorpay`
+3. Event: **`payment_link.paid`**
+4. Copy secret → `RAZORPAY_WEBHOOK_SECRET` on Render → **Manual Deploy**
 
 ---
 
-## Deploy frontend (Vercel)
+## Deploy frontend — Vercel (free)
 
-1. Go to [vercel.com](https://vercel.com) → Add New Project → Import GitHub repo
-2. Set **Root Directory** to `frontend`
-3. Framework: Vite (auto-detected)
-4. Build command: `npm run build`
-5. Output directory: `dist`
-6. Environment variables:
+1. [vercel.com](https://vercel.com) → Add New Project → Import `DairyLedger`
+2. **Root Directory:** `frontend`
+3. Build: `npm run build` → Output: `dist`
+4. Environment variables:
 
 | Variable | Value |
 |----------|--------|
 | `VITE_SUPABASE_URL` | `https://xxx.supabase.co` |
 | `VITE_SUPABASE_ANON_KEY` | Supabase anon key |
-| `VITE_BACKEND_URL` | Your Railway backend URL |
+| `VITE_BACKEND_URL` | Your Render URL (e.g. `https://dairy-ledger-api.onrender.com`) |
 | `VITE_API_KEY` | Same as backend `API_KEY` |
 
-7. Deploy → you get `https://your-app.vercel.app`
+5. Deploy → note your URL (e.g. `https://dairy-ledger.vercel.app`)
 
 ### Update backend CORS
 
-Go back to Railway → set `FRONTEND_URL` to your Vercel URL → redeploy backend.
+On Render → Environment → set `FRONTEND_URL` to your exact Vercel URL → **Manual Deploy**.
 
 ---
 
-## Deploy backend (Render — alternative)
+## Other backend options
 
-1. [render.com](https://render.com) → New → Web Service → connect repo
-2. Root Directory: `backend`
-3. Build: `npm install`
-4. Start: `npm start`
-5. Same env vars as Railway above
+| Platform | Cost | Notes |
+|----------|------|--------|
+| **Render** | Free forever | Sleeps when idle; best default |
+| **Fly.io** | ~$5/mo credit free | Stays awake; [fly.io](https://fly.io) |
+| **Railway** | Paid after trial | $5/mo hobby plan |
+| **Oracle Cloud** | Always-free VM | More setup; never sleeps |
+
+For a small dairy (~50 customers), **Render free is enough**.
+
+---
+
+## Admin login (one-time Supabase setup)
+
+The app uses **Supabase Auth** — single admin email + password.
+
+### 1. Supabase Dashboard → Authentication
+
+1. **Providers** → Email → keep enabled
+2. **Sign In / Providers** → turn **OFF** “Allow new users to sign up” (so random people cannot register)
+3. **Users** → **Add user** → enter your admin email + password
+
+### 2. Run RLS migration (SQL Editor)
+
+Paste and run `supabase/migrations/005_auth_rls.sql` — blocks anonymous access to all tables.
+
+### 3. Vercel env var
+
+Add:
+
+| Variable | Value |
+|----------|--------|
+| `VITE_ADMIN_EMAIL` | Same email as the admin user you created |
+
+Redeploy Vercel after adding the variable.
+
+### What stays public
+
+- `/login` — login page only
+- `/payment-success` — Razorpay redirect (no dairy data)
+- Backend webhook — uses service key, not browser auth
+
+---
+
+## Auto redeploy?
+
+| Change | Redeploys automatically? |
+|--------|--------------------------|
+| Push code to GitHub `main` | **Yes** — Vercel + Render redeploy if connected to repo |
+| New Vercel env var | **Yes** — trigger redeploy in Vercel dashboard |
+| Supabase SQL migration | **No** — run `005_auth_rls.sql` manually once in SQL Editor |
+| Create admin user in Supabase | **No** — one-time in dashboard |
 
 ---
 
@@ -103,20 +157,18 @@ Go back to Railway → set `FRONTEND_URL` to your Vercel URL → redeploy backen
 
 - [ ] `https://YOUR-BACKEND/health` returns OK
 - [ ] Frontend loads and shows customers
-- [ ] Settings page: fill dairy name, GSTIN, address
-- [ ] Generate one test bill + Razorpay link (test mode)
-- [ ] Razorpay webhook shows 200 in dashboard logs
-- [ ] WhatsApp send works on phone (PDF auto-attach)
+- [ ] Settings: dairy name, GSTIN, address
+- [ ] Generate test bill + Razorpay link (test mode)
+- [ ] Razorpay webhook logs show 200
+- [ ] Payment marks bill as paid in app
 
 ---
 
 ## Switch to live Razorpay
 
-When ready for real payments:
-1. Razorpay Dashboard → switch to **Live Mode**
-2. Generate **Live** API keys
-3. Update `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` on Railway
-4. Create new **Live** webhook with same backend URL
+1. Razorpay Dashboard → **Live Mode**
+2. New Live API keys → update on Render
+3. New Live webhook → same Render URL
 
 ---
 
@@ -124,8 +176,8 @@ When ready for real payments:
 
 | Problem | Fix |
 |---------|-----|
-| CORS error on bill generate | `FRONTEND_URL` on backend must exactly match Vercel URL |
+| Bill/Razorpay very slow (60s) | Render was asleep — hit `/health` first, or wait |
+| CORS error | `FRONTEND_URL` must exactly match Vercel URL |
 | Invalid Supabase URL | No `/rest/v1/` suffix |
-| Razorpay link fails | Backend running? `VITE_BACKEND_URL` correct? |
-| Webhook not marking paid | Webhook URL must be public HTTPS, not localhost |
+| Webhook not marking paid | URL must be `https://...onrender.com/webhook/razorpay` |
 | 401 on create-link | `VITE_API_KEY` must match backend `API_KEY` |

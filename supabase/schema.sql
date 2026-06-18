@@ -118,11 +118,11 @@ alter table payments enable row level security;
 alter table expenses enable row level security;
 alter table reminders enable row level security;
 
-create policy "Allow all on customers" on customers for all using (true) with check (true);
-create policy "Allow all on daily_entries" on daily_entries for all using (true) with check (true);
-create policy "Allow all on milk_production" on milk_production for all using (true) with check (true);
-create policy "Allow all on bills" on bills for all using (true) with check (true);
-create policy "Allow all on payments" on payments for all using (true) with check (true);
-create policy "Allow all on expenses" on expenses for all using (true) with check (true);
-create policy "Allow all on reminders" on reminders for all using (true) with check (true);
+create policy "Auth users on customers" on customers for all to authenticated using (true) with check (true);
+create policy "Auth users on daily_entries" on daily_entries for all to authenticated using (true) with check (true);
+create policy "Auth users on milk_production" on milk_production for all to authenticated using (true) with check (true);
+create policy "Auth users on bills" on bills for all to authenticated using (true) with check (true);
+create policy "Auth users on payments" on payments for all to authenticated using (true) with check (true);
+create policy "Auth users on expenses" on expenses for all to authenticated using (true) with check (true);
+create policy "Auth users on reminders" on reminders for all to authenticated using (true) with check (true);
 grant execute on function next_bill_id() to anon, authenticated, service_role;

@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { supabase } from '../lib/supabase'
 import { getSettings, saveSettings } from '../lib/constants'
+import { useAuth } from '../lib/auth'
 
 export default function Settings() {
+  const { user, logout } = useAuth()
   const [form, setForm] = useState(getSettings())
   const [saved, setSaved] = useState(false)
 
@@ -43,6 +44,17 @@ export default function Settings() {
         </button>
         {saved && <p className="text-center text-sm text-green-600">Settings saved ✓</p>}
       </form>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-5 md:hidden">
+        <p className="text-sm text-slate-500">Signed in as {user?.email}</p>
+        <button
+          type="button"
+          onClick={() => logout()}
+          className="mt-3 w-full rounded-lg border border-slate-300 py-2 text-sm text-slate-700"
+        >
+          Sign out
+        </button>
+      </div>
 
       <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
         <p className="font-semibold">How Razorpay works</p>
