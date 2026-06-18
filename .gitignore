@@ -1,6 +1,10 @@
 node_modules/
 .env
+.env.*
+!.env.example
 backend/.env
 frontend/.env
 frontend/dist/
 .DS_Store
+*.log
+.vite/
