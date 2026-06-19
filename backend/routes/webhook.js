@@ -1,12 +1,17 @@
 const express = require('express')
 const router = express.Router()
 const crypto = require('crypto')
-const supabase = require('../lib/supabase')
+const { markBillPaidFromRazorpay } = require('../lib/mark-paid')
 
 router.post('/razorpay', async (req, res) => {
   const signature = req.headers['x-razorpay-signature']
   const body = req.body
   const secret = process.env.RAZORPAY_WEBHOOK_SECRET
+
+  if (!secret || secret === 'your_webhook_secret') {
+    console.error('RAZORPAY_WEBHOOK_SECRET not configured')
+    return res.status(500).json({ error: 'Webhook secret not configured' })
+  }
 
   const expectedSig = crypto
     .createHmac('sha256', secret)
@@ -18,51 +23,36 @@ router.post('/razorpay', async (req, res) => {
     return res.status(400).json({ error: 'Invalid signature' })
   }
 
-  const event = JSON.parse(body.toString())
+  let event
+  try {
+    event = JSON.parse(body.toString())
+  } catch (err) {
+    console.error('Invalid webhook JSON:', err.message)
+    return res.status(400).json({ error: 'Invalid JSON' })
+  }
 
-  if (event.event === 'payment_link.paid') {
-    const entity = event.payload.payment_link.entity
-    const billId = entity.reference_id
-    const paymentId = event.payload.payment.entity.id
-    const amountPaid = entity.amount_paid / 100
+  try {
+    if (event.event === 'payment_link.paid') {
+      const linkEntity = event.payload?.payment_link?.entity
+      const paymentEntity = event.payload?.payment?.entity
 
-    // Idempotency — skip duplicate webhook deliveries
-    const { data: existing } = await supabase
-      .from('payments')
-      .select('id')
-      .eq('razorpay_payment_id', paymentId)
-      .maybeSingle()
+      if (!linkEntity?.reference_id) {
+        console.error('Webhook missing reference_id', JSON.stringify(event.payload))
+        return res.status(400).json({ error: 'Missing bill reference' })
+      }
 
-    if (existing) {
-      console.log(`Duplicate webhook for payment ${paymentId}, skipping`)
-      return res.status(200).json({ received: true, duplicate: true })
+      const billId = linkEntity.reference_id
+      const paymentId = paymentEntity?.id || linkEntity.payments?.[0] || null
+      const amountPaid = Number(linkEntity.amount_paid) / 100
+
+      const result = await markBillPaidFromRazorpay({ billId, paymentId, amountPaid })
+      if (!result.duplicate) {
+        console.log(`Bill ${billId} marked paid via webhook`)
+      }
     }
-
-    const { data: bill, error } = await supabase
-      .from('bills')
-      .update({
-        paid: true,
-        paid_at: new Date().toISOString(),
-        payment_mode: 'upi'
-      })
-      .eq('id', billId)
-      .select('*, customers(*)')
-      .single()
-
-    if (error) {
-      console.error('Supabase error:', error)
-      return res.status(500).json({ error: 'DB update failed' })
-    }
-
-    await supabase.from('payments').insert({
-      bill_id: billId,
-      customer_id: bill.customer_id,
-      amount: amountPaid,
-      mode: 'upi',
-      razorpay_payment_id: paymentId
-    })
-
-    console.log(`Bill ${billId} marked paid for ${bill.customers?.name}`)
+  } catch (err) {
+    console.error('Webhook processing error:', err.message)
+    return res.status(500).json({ error: 'Processing failed' })
   }
 
   res.status(200).json({ received: true })

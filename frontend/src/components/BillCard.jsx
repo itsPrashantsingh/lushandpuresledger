@@ -5,7 +5,9 @@ export default function BillCard({
   paidAmount = 0,
   onMarkCashPaid,
   onSendReminder,
-  onViewPdf
+  onViewPdf,
+  onSyncRazorpay,
+  syncing = false
 }) {
   const status = getBillStatus(bill, paidAmount)
   const balance = Number(bill.total_amount) - paidAmount
@@ -43,6 +45,15 @@ export default function BillCard({
 
       {status !== 'paid' && (
         <div className="mt-4 flex flex-wrap gap-2">
+          {bill.razorpay_link_id && (
+            <button
+              onClick={() => onSyncRazorpay?.(bill)}
+              disabled={syncing}
+              className="rounded-lg border border-blue-400 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-800 hover:bg-blue-100 disabled:opacity-50"
+            >
+              {syncing ? 'Checking...' : 'Sync Razorpay Payment'}
+            </button>
+          )}
           <button
             onClick={() => onMarkCashPaid?.(bill)}
             className="rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700"

@@ -9,7 +9,8 @@ import {
   ensureRazorpayForUnpaidBills,
   getMonthlyBillPackages,
   formatGenerationSummary,
-  billableEntries
+  billableEntries,
+  syncRazorpayPayment
 } from '../lib/bills'
 import { openBillPdf } from '../lib/pdf'
 import { shareBillOnWhatsApp } from '../lib/whatsapp'
@@ -31,6 +32,7 @@ export default function Bills() {
   const [toast, setToast] = useState({ message: '', type: 'success' })
   const [sendQueue, setSendQueue] = useState(null)
   const [genSummary, setGenSummary] = useState(null)
+  const [syncingBillId, setSyncingBillId] = useState('')
 
   useEffect(() => { loadBills() }, [month])
 
@@ -126,6 +128,22 @@ export default function Bills() {
     } catch (err) {
       setToast({ message: err.message, type: 'error' })
     }
+  }
+
+  async function handleSyncRazorpay(bill) {
+    setSyncingBillId(bill.id)
+    try {
+      const result = await syncRazorpayPayment(bill.id)
+      if (result.success && (result.synced || result.alreadyPaid)) {
+        setToast({ message: `Bill ${bill.id} marked paid ✓`, type: 'success' })
+        loadBills()
+      } else {
+        setToast({ message: result.message || 'Not paid on Razorpay yet', type: 'info' })
+      }
+    } catch (err) {
+      setToast({ message: err.response?.data?.error || err.message, type: 'error' })
+    }
+    setSyncingBillId('')
   }
 
   async function handleReminder(bill) {
@@ -238,7 +256,7 @@ export default function Bills() {
         <div className="space-y-3">
           {filteredBills().map((bill) => (
             <div key={bill.id}>
-              <BillCard bill={bill} paidAmount={paidMap[bill.id] || 0} onMarkCashPaid={openCashModal} onSendReminder={handleReminder} onViewPdf={handleViewPdf} />
+              <BillCard bill={bill} paidAmount={paidMap[bill.id] || 0} onMarkCashPaid={openCashModal} onSendReminder={handleReminder} onViewPdf={handleViewPdf} onSyncRazorpay={handleSyncRazorpay} syncing={syncingBillId === bill.id} />
               <button onClick={() => handleSendBill(bill)} className="mt-1 text-sm text-green-600 hover:underline">
                 📲 Send bill PDF on WhatsApp
                 {bill.sent_at && <span className="ml-2 text-xs text-slate-400">sent {formatDate(bill.sent_at.slice(0, 10))}</span>}

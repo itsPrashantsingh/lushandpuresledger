@@ -88,6 +88,12 @@ export async function createRazorpayLink(bill, customer) {
   return res.data.shortUrl
 }
 
+export async function syncRazorpayPayment(billId) {
+  const headers = API_KEY ? { 'x-api-key': API_KEY } : {}
+  const res = await axios.post(`${BACKEND_URL}/api/razorpay/verify-payment`, { billId }, { headers })
+  return res.data
+}
+
 export async function getPaidAmountForBill(billId) {
   const { data } = await supabase
     .from('payments')
