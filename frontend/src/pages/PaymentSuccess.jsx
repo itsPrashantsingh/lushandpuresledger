@@ -76,9 +76,7 @@ export default function PaymentSuccess() {
         <h1 className="mt-4 text-2xl font-bold text-green-700">Payment Successful!</h1>
         <p className="mt-2 text-slate-600">{message}</p>
         {billId && <p className="mt-2 text-xs text-slate-400">Bill: {billId}</p>}
-        <Link to="/login" className="mt-6 inline-block text-sm text-green-600 hover:underline">
-          Back to dairy portal →
-        </Link>
+        
       </div>
     </div>
   )
