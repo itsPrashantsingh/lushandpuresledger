@@ -3,6 +3,22 @@ const router = express.Router()
 const crypto = require('crypto')
 const { markBillPaidFromRazorpay } = require('../lib/mark-paid')
 
+async function handlePaymentLinkPaid(linkEntity, paymentEntity) {
+  if (!linkEntity?.reference_id) {
+    throw new Error('Missing reference_id on payment link')
+  }
+
+  const billId = linkEntity.reference_id
+  const paymentId =
+    paymentEntity?.id ||
+    (Array.isArray(linkEntity.payments) ? linkEntity.payments[0] : null) ||
+    null
+
+  const amountPaid = Number(linkEntity.amount_paid || linkEntity.amount || 0) / 100
+
+  return markBillPaidFromRazorpay({ billId, paymentId, amountPaid })
+}
+
 router.post('/razorpay', async (req, res) => {
   const signature = req.headers['x-razorpay-signature']
   const body = req.body
@@ -32,26 +48,26 @@ router.post('/razorpay', async (req, res) => {
   }
 
   try {
-    if (event.event === 'payment_link.paid') {
-      const linkEntity = event.payload?.payment_link?.entity
-      const paymentEntity = event.payload?.payment?.entity
+    const linkEntity = event.payload?.payment_link?.entity
+    const paymentEntity = event.payload?.payment?.entity
 
-      if (!linkEntity?.reference_id) {
-        console.error('Webhook missing reference_id', JSON.stringify(event.payload))
-        return res.status(400).json({ error: 'Missing bill reference' })
+    if (event.event === 'payment_link.paid' || linkEntity?.status === 'paid') {
+      const result = await handlePaymentLinkPaid(linkEntity, paymentEntity)
+      if (result.ok && !result.duplicate && !result.alreadyPaid) {
+        console.log(`Bill ${result.billId} marked paid via webhook (${event.event})`)
       }
-
-      const billId = linkEntity.reference_id
-      const paymentId = paymentEntity?.id || linkEntity.payments?.[0] || null
-      const amountPaid = Number(linkEntity.amount_paid) / 100
-
-      const result = await markBillPaidFromRazorpay({ billId, paymentId, amountPaid })
-      if (!result.duplicate) {
-        console.log(`Bill ${billId} marked paid via webhook`)
+    } else if (event.event === 'payment.captured' && paymentEntity) {
+      const billId = paymentEntity.notes?.bill_id || paymentEntity.description?.match(/BILL-\d+/)?.[0]
+      if (billId) {
+        await markBillPaidFromRazorpay({
+          billId,
+          paymentId: paymentEntity.id,
+          amountPaid: Number(paymentEntity.amount) / 100
+        })
       }
     }
   } catch (err) {
-    console.error('Webhook processing error:', err.message)
+    console.error('Webhook processing error:', err.message, event?.event)
     return res.status(500).json({ error: 'Processing failed' })
   }
 

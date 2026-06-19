@@ -15,16 +15,7 @@ import Expenses from './pages/Expenses'
 import Reminders from './pages/Reminders'
 import ImportExport from './pages/ImportExport'
 import Settings from './pages/Settings'
-
-function PaymentSuccess() {
-  return (
-    <div className="py-12 text-center">
-      <p className="text-4xl">✅</p>
-      <h1 className="mt-4 text-2xl font-bold text-green-700">Payment Successful!</h1>
-      <p className="mt-2 text-slate-500">Thank you for your payment.</p>
-    </div>
-  )
-}
+import PaymentSuccess from './pages/PaymentSuccess'
 
 function AppLayout({ children }) {
   return (

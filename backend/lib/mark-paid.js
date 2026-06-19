@@ -1,6 +1,20 @@
 const supabase = require('./supabase')
 
 async function markBillPaidFromRazorpay({ billId, paymentId, amountPaid, mode = 'upi' }) {
+  const { data: existingBill } = await supabase
+    .from('bills')
+    .select('id, paid, customer_id, total_amount')
+    .eq('id', billId)
+    .maybeSingle()
+
+  if (!existingBill) {
+    throw new Error(`Bill not found: ${billId}`)
+  }
+
+  if (existingBill.paid) {
+    return { ok: true, alreadyPaid: true, billId }
+  }
+
   if (paymentId) {
     const { data: existing } = await supabase
       .from('payments')
@@ -12,6 +26,8 @@ async function markBillPaidFromRazorpay({ billId, paymentId, amountPaid, mode = 
       return { ok: true, duplicate: true, billId }
     }
   }
+
+  const paidAmount = amountPaid > 0 ? amountPaid : Number(existingBill.total_amount)
 
   const { data: bill, error } = await supabase
     .from('bills')
@@ -29,7 +45,7 @@ async function markBillPaidFromRazorpay({ billId, paymentId, amountPaid, mode = 
   await supabase.from('payments').insert({
     bill_id: billId,
     customer_id: bill.customer_id,
-    amount: amountPaid,
+    amount: paidAmount,
     mode,
     razorpay_payment_id: paymentId || null
   })

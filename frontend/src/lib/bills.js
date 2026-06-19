@@ -88,9 +88,10 @@ export async function createRazorpayLink(bill, customer) {
   return res.data.shortUrl
 }
 
-export async function syncRazorpayPayment(billId) {
-  const headers = API_KEY ? { 'x-api-key': API_KEY } : {}
-  const res = await axios.post(`${BACKEND_URL}/api/razorpay/verify-payment`, { billId }, { headers })
+export async function syncRazorpayPayment(billId, { publicConfirm = false } = {}) {
+  const headers = API_KEY && !publicConfirm ? { 'x-api-key': API_KEY } : {}
+  const endpoint = publicConfirm ? '/api/razorpay/confirm-payment' : '/api/razorpay/verify-payment'
+  const res = await axios.post(`${BACKEND_URL}${endpoint}`, { billId }, { headers })
   return res.data
 }
 

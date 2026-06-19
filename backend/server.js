@@ -31,7 +31,12 @@ function requireApiKey(req, res, next) {
 app.use('/webhook', express.raw({ type: 'application/json' }))
 app.use(express.json())
 
-app.use('/api/razorpay', requireApiKey, require('./routes/razorpay'))
+// confirm-payment is public (customer after Razorpay); other routes need API key
+app.use('/api/razorpay', (req, res, next) => {
+  if (req.method === 'POST' && req.path === '/confirm-payment') return next()
+  return requireApiKey(req, res, next)
+})
+app.use('/api/razorpay', require('./routes/razorpay'))
 app.use('/webhook', require('./routes/webhook'))
 
 app.get('/health', (req, res) => res.json({ ok: true }))
