@@ -13,7 +13,7 @@ import {
   whatsappLink,
   getBillStatus
 } from '../lib/utils'
-import { getPaidAmountsForBills, markCashPayment } from '../lib/bills'
+import { getPaidAmountsForBills, markCashPayment, reconcileRazorpayPayments, wakeBackend } from '../lib/bills'
 import { buildPaymentDueMessage, buildCashReceivedMessage } from '../lib/messages'
 
 export default function Dashboard() {
@@ -33,6 +33,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    wakeBackend().then(() => reconcileRazorpayPayments().catch(() => {}))
     loadDashboard()
   }, [])
 

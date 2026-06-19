@@ -1,53 +1,12 @@
 const express = require('express')
 const router = express.Router()
-const Razorpay = require('razorpay')
 const supabase = require('../lib/supabase')
-const { markBillPaidFromRazorpay } = require('../lib/mark-paid')
-
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET
-})
-
-async function verifyAndMarkPaid(billId, res) {
-  const { data: bill, error: billErr } = await supabase
-    .from('bills')
-    .select('*, customers(*)')
-    .eq('id', billId)
-    .single()
-
-  if (billErr || !bill) return res.status(404).json({ error: 'Bill not found' })
-  if (bill.paid) return res.json({ success: true, alreadyPaid: true, billId })
-
-  if (!bill.razorpay_link_id) {
-    return res.status(400).json({ error: 'No Razorpay link on this bill' })
-  }
-
-  const link = await razorpay.paymentLink.fetch(bill.razorpay_link_id)
-
-  if (link.status !== 'paid') {
-    return res.json({
-      success: false,
-      status: link.status,
-      message: `Payment link status is "${link.status}" — not paid yet on Razorpay`
-    })
-  }
-
-  let paymentId = link.payments?.[0] || null
-  if (!paymentId && link.id) {
-    try {
-      const payments = await razorpay.paymentLink.fetchAllPayments(link.id)
-      paymentId = payments?.items?.[0]?.id || null
-    } catch {
-      // optional
-    }
-  }
-
-  const amountPaid = Number(link.amount_paid || link.amount || 0) / 100
-  await markBillPaidFromRazorpay({ billId, paymentId, amountPaid })
-
-  return res.json({ success: true, synced: true, billId, amountPaid })
-}
+const {
+  verifyCallbackSignature,
+  syncBillFromRazorpay,
+  reconcileUnpaidBills,
+  razorpay
+} = require('../lib/razorpay-sync')
 
 router.post('/create-link', async (req, res) => {
   const { billId, amount, customerName, customerPhone, description } = req.body
@@ -62,16 +21,14 @@ router.post('/create-link', async (req, res) => {
     const link = await razorpay.paymentLink.create({
       amount: Math.round(amount * 100),
       currency: 'INR',
-      description: description || `Milk Bill - ${billId}`,
+      description: description || `Milk Bill ${billId}`,
       reference_id: billId,
+      notes: { bill_id: billId },
       customer: {
         name: customerName,
         contact: `+91${phone}`
       },
-      notify: {
-        sms: true,
-        email: false
-      },
+      notify: { sms: true, email: false },
       reminder_enable: true,
       callback_url: `${process.env.FRONTEND_URL}/payment-success`,
       callback_method: 'get'
@@ -89,33 +46,71 @@ router.post('/create-link', async (req, res) => {
 
     res.json({ success: true, shortUrl: link.short_url, linkId: link.id })
   } catch (err) {
-    console.error(err)
+    console.error('create-link:', err)
     res.status(500).json({ error: err.message })
   }
 })
 
-/** Public — customer redirect after payment (no API key) */
+/** Public — customer lands here after Razorpay payment redirect */
 router.post('/confirm-payment', async (req, res) => {
-  const { billId } = req.body
-  if (!billId) return res.status(400).json({ error: 'billId required' })
+  const {
+    billId,
+    razorpay_payment_id,
+    razorpay_payment_link_id,
+    razorpay_payment_link_reference_id,
+    razorpay_payment_link_status,
+    razorpay_signature
+  } = req.body
+
+  const resolvedBillId = billId || razorpay_payment_link_reference_id
+  if (!resolvedBillId) {
+    return res.status(400).json({ error: 'billId required' })
+  }
+
+  if (razorpay_signature) {
+    const valid = verifyCallbackSignature({
+      razorpay_payment_id,
+      razorpay_payment_link_id,
+      razorpay_payment_link_reference_id: resolvedBillId,
+      razorpay_payment_link_status,
+      razorpay_signature
+    })
+    if (!valid) {
+      console.error('Invalid payment callback signature for', resolvedBillId)
+      return res.status(400).json({ error: 'Invalid payment signature' })
+    }
+  }
 
   try {
-    await verifyAndMarkPaid(billId, res)
+    const result = await syncBillFromRazorpay(resolvedBillId)
+    res.json({ success: result.success !== false, ...result })
   } catch (err) {
     console.error('confirm-payment:', err)
     res.status(500).json({ error: err.message })
   }
 })
 
-/** Admin — manual sync from Bills page */
+/** Admin — sync one bill */
 router.post('/verify-payment', async (req, res) => {
   const { billId } = req.body
   if (!billId) return res.status(400).json({ error: 'billId required' })
 
   try {
-    await verifyAndMarkPaid(billId, res)
+    const result = await syncBillFromRazorpay(billId)
+    res.json({ success: result.success !== false, ...result })
   } catch (err) {
     console.error('verify-payment:', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/** Admin — sync all unpaid bills with Razorpay links */
+router.post('/reconcile', async (req, res) => {
+  try {
+    const result = await reconcileUnpaidBills()
+    res.json({ success: true, ...result })
+  } catch (err) {
+    console.error('reconcile:', err)
     res.status(500).json({ error: err.message })
   }
 })

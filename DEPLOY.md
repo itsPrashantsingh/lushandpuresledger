@@ -50,7 +50,18 @@ git push vercel main
 
 Render’s **free web service** does not expire after 30 days (unlike Railway’s trial).
 
-**Trade-off:** The service **sleeps after ~15 minutes** of no traffic. The first request after sleep takes **30–60 seconds** to wake up. Razorpay webhooks still work — Razorpay retries if the first attempt times out.
+**Trade-off:** The service **sleeps after ~15 minutes** of no traffic. The first request after sleep takes **30–60 seconds** to wake up.
+
+**Keep backend awake (recommended):** Use a free uptime monitor (e.g. [UptimeRobot](https://uptimerobot.com)) to ping `https://YOUR-RENDER-URL/health` every 5 minutes — helps webhooks arrive instantly.
+
+### Payment automation (built-in)
+
+Payments are confirmed through **4 layers** (no manual action needed):
+
+1. **Razorpay webhook** → `payment_link.paid` marks bill paid
+2. **Customer redirect** → `/payment-success` verifies signature + syncs (5 retries)
+3. **Auto-reconcile** → opening Bills or Dashboard checks all unpaid Razorpay bills
+4. **Manual sync** → "Sync Razorpay Payment" button on each bill (backup)
 
 ### Steps
 

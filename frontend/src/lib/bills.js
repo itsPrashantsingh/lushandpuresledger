@@ -88,11 +88,31 @@ export async function createRazorpayLink(bill, customer) {
   return res.data.shortUrl
 }
 
-export async function syncRazorpayPayment(billId, { publicConfirm = false } = {}) {
-  const headers = API_KEY && !publicConfirm ? { 'x-api-key': API_KEY } : {}
-  const endpoint = publicConfirm ? '/api/razorpay/confirm-payment' : '/api/razorpay/verify-payment'
-  const res = await axios.post(`${BACKEND_URL}${endpoint}`, { billId }, { headers })
+export async function syncRazorpayPayment(billId) {
+  const headers = API_KEY ? { 'x-api-key': API_KEY } : {}
+  const res = await axios.post(`${BACKEND_URL}/api/razorpay/verify-payment`, { billId }, { headers })
   return res.data
+}
+
+/** Public confirm after Razorpay redirect — includes signature params */
+export async function confirmRazorpayPayment(payload) {
+  const res = await axios.post(`${BACKEND_URL}/api/razorpay/confirm-payment`, payload)
+  return res.data
+}
+
+/** Check all unpaid Razorpay bills against Razorpay API */
+export async function reconcileRazorpayPayments() {
+  const headers = API_KEY ? { 'x-api-key': API_KEY } : {}
+  const res = await axios.post(`${BACKEND_URL}/api/razorpay/reconcile`, {}, { headers })
+  return res.data
+}
+
+export async function wakeBackend() {
+  try {
+    await axios.get(`${BACKEND_URL}/health`, { timeout: 60000 })
+  } catch {
+    // ignore
+  }
 }
 
 export async function getPaidAmountForBill(billId) {

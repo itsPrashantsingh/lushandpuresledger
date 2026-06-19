@@ -10,7 +10,9 @@ import {
   getMonthlyBillPackages,
   formatGenerationSummary,
   billableEntries,
-  syncRazorpayPayment
+  syncRazorpayPayment,
+  reconcileRazorpayPayments,
+  wakeBackend
 } from '../lib/bills'
 import { openBillPdf } from '../lib/pdf'
 import { shareBillOnWhatsApp } from '../lib/whatsapp'
@@ -36,6 +38,19 @@ export default function Bills() {
 
   useEffect(() => { loadBills() }, [month])
 
+  async function autoReconcile() {
+    try {
+      await wakeBackend()
+      const result = await reconcileRazorpayPayments()
+      if (result.synced?.length > 0) {
+        setToast({ message: `Auto-synced ${result.synced.length} Razorpay payment(s) ✓`, type: 'success' })
+        loadBills()
+      }
+    } catch {
+      // silent — backend may be waking up
+    }
+  }
+
   async function loadBills() {
     setLoading(true)
     const ym = month
@@ -54,11 +69,15 @@ export default function Bills() {
     setBills(data || [])
     setPaidMap(pmap)
     setLoading(false)
+
+    const hasPendingRazorpay = (data || []).some((b) => !b.paid && b.razorpay_link_id)
+    if (hasPendingRazorpay) autoReconcile()
   }
 
   async function runGenerateAll() {
     setRunning('generate')
     try {
+      await wakeBackend()
       const results = await generateAllMonthlyBills(month, {
         withRazorpay: true,
         onProgress: (p) => setProgress(p)
@@ -79,6 +98,7 @@ export default function Bills() {
   async function runRazorpayAll() {
     setRunning('razorpay')
     try {
+      await wakeBackend()
       const results = await ensureRazorpayForUnpaidBills(month, (p) => setProgress(p))
       const ok = results.filter((r) => r.url).length
       setToast({ message: `Created ${ok} Razorpay payment links`, type: 'success' })

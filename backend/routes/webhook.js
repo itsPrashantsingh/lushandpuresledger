@@ -1,23 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const crypto = require('crypto')
-const { markBillPaidFromRazorpay } = require('../lib/mark-paid')
-
-async function handlePaymentLinkPaid(linkEntity, paymentEntity) {
-  if (!linkEntity?.reference_id) {
-    throw new Error('Missing reference_id on payment link')
-  }
-
-  const billId = linkEntity.reference_id
-  const paymentId =
-    paymentEntity?.id ||
-    (Array.isArray(linkEntity.payments) ? linkEntity.payments[0] : null) ||
-    null
-
-  const amountPaid = Number(linkEntity.amount_paid || linkEntity.amount || 0) / 100
-
-  return markBillPaidFromRazorpay({ billId, paymentId, amountPaid })
-}
+const { processWebhookEvent } = require('../lib/razorpay-sync')
 
 router.post('/razorpay', async (req, res) => {
   const signature = req.headers['x-razorpay-signature']
@@ -47,27 +31,24 @@ router.post('/razorpay', async (req, res) => {
     return res.status(400).json({ error: 'Invalid JSON' })
   }
 
-  try {
-    const linkEntity = event.payload?.payment_link?.entity
-    const paymentEntity = event.payload?.payment?.entity
+  const eventName = event.event
+  console.log(`Webhook received: ${eventName}`)
 
-    if (event.event === 'payment_link.paid' || linkEntity?.status === 'paid') {
-      const result = await handlePaymentLinkPaid(linkEntity, paymentEntity)
-      if (result.ok && !result.duplicate && !result.alreadyPaid) {
-        console.log(`Bill ${result.billId} marked paid via webhook (${event.event})`)
-      }
-    } else if (event.event === 'payment.captured' && paymentEntity) {
-      const billId = paymentEntity.notes?.bill_id || paymentEntity.description?.match(/BILL-\d+/)?.[0]
-      if (billId) {
-        await markBillPaidFromRazorpay({
-          billId,
-          paymentId: paymentEntity.id,
-          amountPaid: Number(paymentEntity.amount) / 100
-        })
-      }
+  try {
+    const result = await processWebhookEvent(event)
+
+    if (result?.billId && !result.duplicate && !result.alreadyPaid && !result.ignored) {
+      console.log(`Bill ${result.billId} marked paid via webhook (${eventName})`)
     }
   } catch (err) {
-    console.error('Webhook processing error:', err.message, event?.event)
+    console.error(`Webhook ${eventName} error:`, err.message)
+
+    // Bill not found — don't retry forever
+    if (err.message?.includes('not found')) {
+      return res.status(200).json({ received: true, skipped: true })
+    }
+
+    // Transient DB/API error — Razorpay will retry
     return res.status(500).json({ error: 'Processing failed' })
   }
 
