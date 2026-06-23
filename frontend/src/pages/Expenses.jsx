@@ -3,18 +3,33 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recha
 import { supabase } from '../lib/supabase'
 import { formatCurrency, currentYearMonth, getMonthBounds, todayISO } from '../lib/utils'
 
-const CATEGORIES = ['feed', 'salary', 'medicine', 'transport', 'other']
-const COLORS = ['#16a34a', '#3b82f6', '#d97706', '#8b5cf6', '#64748b']
+const COLORS = ['#16a34a', '#3b82f6', '#d97706', '#8b5cf6', '#64748b', '#ef4444', '#0891b2', '#a16207']
 
 export default function Expenses() {
   const [month, setMonth] = useState(currentYearMonth())
   const [expenses, setExpenses] = useState([])
-  const [form, setForm] = useState({ date: todayISO(), category: 'feed', amount: '', note: '' })
+  const [categories, setCategories] = useState([])
+  const [form, setForm] = useState({ date: todayISO(), category: '', amount: '', note: '' })
   const [loading, setLoading] = useState(true)
+  const [showCatModal, setShowCatModal] = useState(false)
+  const [catForm, setCatForm] = useState({ name: '' })
+  const [editingCat, setEditingCat] = useState(null)
 
-  useEffect(() => {
-    loadExpenses()
-  }, [month])
+  useEffect(() => { loadCategories() }, [])
+  useEffect(() => { loadExpenses() }, [month])
+
+  async function loadCategories() {
+    const { data } = await supabase
+      .from('expense_categories')
+      .select('*')
+      .eq('archived', false)
+      .order('sort_order')
+    const cats = data || []
+    setCategories(cats)
+    if (cats.length && !form.category) {
+      setForm((f) => ({ ...f, category: cats[0].name }))
+    }
+  }
 
   async function loadExpenses() {
     setLoading(true)
@@ -25,20 +40,20 @@ export default function Expenses() {
       .gte('date', start)
       .lte('date', end)
       .order('date', { ascending: false })
-
     setExpenses(data || [])
     setLoading(false)
   }
 
   async function handleSubmit(e) {
     e.preventDefault()
+    if (!form.category) return
     await supabase.from('expenses').insert({
       date: form.date,
       category: form.category,
       amount: Number(form.amount),
       note: form.note
     })
-    setForm({ date: todayISO(), category: 'feed', amount: '', note: '' })
+    setForm((f) => ({ ...f, amount: '', note: '' }))
     loadExpenses()
   }
 
@@ -49,23 +64,65 @@ export default function Expenses() {
     }
   }
 
+  function openAddCat() {
+    setEditingCat(null)
+    setCatForm({ name: '' })
+    setShowCatModal(true)
+  }
+
+  function openEditCat(cat) {
+    setEditingCat(cat)
+    setCatForm({ name: cat.name })
+    setShowCatModal(true)
+  }
+
+  async function saveCat(e) {
+    e.preventDefault()
+    const name = catForm.name.trim()
+    if (!name) return
+    if (editingCat) {
+      await supabase.from('expense_categories').update({ name }).eq('id', editingCat.id)
+      await supabase.from('expenses').update({ category: name }).eq('category', editingCat.name)
+    } else {
+      await supabase.from('expense_categories').insert({ name, sort_order: categories.length + 1 })
+    }
+    setShowCatModal(false)
+    loadCategories()
+  }
+
+  async function archiveCat(cat) {
+    if (!confirm(`Archive "${cat.name}"? Existing expenses keep this category label.`)) return
+    await supabase.from('expense_categories').update({ archived: true }).eq('id', cat.id)
+    loadCategories()
+  }
+
   const monthTotal = expenses.reduce((s, e) => s + Number(e.amount), 0)
 
-  const categoryData = CATEGORIES.map((cat) => ({
-    name: cat.charAt(0).toUpperCase() + cat.slice(1),
-    value: expenses.filter((e) => e.category === cat).reduce((s, e) => s + Number(e.amount), 0)
-  })).filter((d) => d.value > 0)
+  const categoryData = categories
+    .map((cat) => ({
+      name: cat.name,
+      value: expenses.filter((e) => e.category === cat.name).reduce((s, e) => s + Number(e.amount), 0)
+    }))
+    .filter((d) => d.value > 0)
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-slate-800">Expenses</h1>
-        <input
-          type="month"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          className="rounded-lg border border-slate-300 px-3 py-1.5"
-        />
+        <div className="flex gap-2">
+          <button
+            onClick={openAddCat}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+          >
+            Manage Categories
+          </button>
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-1.5"
+          />
+        </div>
       </div>
 
       <div className="rounded-xl border border-red-200 bg-red-50 p-4">
@@ -77,9 +134,10 @@ export default function Expenses() {
         <h2 className="mb-3 font-semibold">Add Expense</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="rounded-lg border px-3 py-2" required />
-          <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="rounded-lg border px-3 py-2">
-            {CATEGORIES.map((c) => (
-              <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
+          <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="rounded-lg border px-3 py-2" required>
+            <option value="">Select category</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.name}>{c.name}</option>
             ))}
           </select>
           <input type="number" placeholder="Amount ₹" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="rounded-lg border px-3 py-2" required />
@@ -129,11 +187,11 @@ export default function Expenses() {
                 {expenses.map((e) => (
                   <tr key={e.id} className="border-b border-slate-100">
                     <td className="py-3 pr-4">{e.date}</td>
-                    <td className="py-3 pr-4 capitalize">{e.category}</td>
+                    <td className="py-3 pr-4">{e.category}</td>
                     <td className="py-3 pr-4 font-medium text-red-600">{formatCurrency(e.amount)}</td>
                     <td className="py-3 pr-4 text-slate-500">{e.note}</td>
                     <td className="py-3">
-                      <button onClick={() => handleDelete(e.id)} className="text-red-500 hover:underline text-xs">Delete</button>
+                      <button onClick={() => handleDelete(e.id)} className="text-xs text-red-500 hover:underline">Delete</button>
                     </td>
                   </tr>
                 ))}
@@ -142,6 +200,46 @@ export default function Expenses() {
           </div>
         )}
       </div>
+
+      {/* Category management modal */}
+      {showCatModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-bold">Expense Categories</h2>
+              <button onClick={() => setShowCatModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+
+            <form onSubmit={saveCat} className="mb-4 flex gap-2">
+              <input
+                placeholder={editingCat ? 'Rename category' : 'New category name'}
+                value={catForm.name}
+                onChange={(e) => setCatForm({ name: e.target.value })}
+                className="flex-1 rounded-lg border px-3 py-2 text-sm"
+                required
+              />
+              <button type="submit" className="rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white">
+                {editingCat ? 'Rename' : 'Add'}
+              </button>
+              {editingCat && (
+                <button type="button" onClick={() => { setEditingCat(null); setCatForm({ name: '' }) }} className="rounded-lg border px-3 py-2 text-sm">Cancel</button>
+              )}
+            </form>
+
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {categories.map((cat) => (
+                <div key={cat.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
+                  <span className="text-sm font-medium">{cat.name}</span>
+                  <div className="flex gap-2">
+                    <button onClick={() => openEditCat(cat)} className="text-xs text-blue-600 hover:underline">Rename</button>
+                    <button onClick={() => archiveCat(cat)} className="text-xs text-red-500 hover:underline">Archive</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

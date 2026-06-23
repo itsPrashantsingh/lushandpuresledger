@@ -6,11 +6,13 @@ const links = [
   { to: '/', label: 'Dashboard', icon: '📊' },
   { to: '/cattle', label: 'Cattle', icon: '🐄' },
   { to: '/milk-production', label: 'Production', icon: '🥛' },
+  { to: '/buttermilk-production', label: 'Buttermilk', icon: '🫗' },
   { to: '/daily-entry', label: 'Deliveries', icon: '🚚' },
   { to: '/customers', label: 'Customers', icon: '👥' },
   { to: '/bills', label: 'Bills', icon: '🧾' },
   { to: '/sales', label: 'Sales', icon: '🛒' },
   { to: '/expenses', label: 'Expenses', icon: '💸' },
+  { to: '/inventory', label: 'Inventory', icon: '📦' },
   { to: '/reminders', label: 'Reminders', icon: '🔔' },
   { to: '/logs', label: 'Logs', icon: '🕒' },
   { to: '/settings', label: 'Settings', icon: '⚙️' }
@@ -36,9 +38,10 @@ export default function Navbar() {
 
   return (
     <>
+      {/* Desktop sidebar */}
       <aside className="hidden md:fixed md:inset-y-0 md:flex md:w-56 md:flex-col md:border-r md:border-slate-200 md:bg-white md:px-4 md:py-6">
         <h1 className="mb-6 px-2 text-lg font-bold text-green-700">{DAIRY_NAME}</h1>
-        <nav className="flex flex-col gap-1">
+        <nav className="flex flex-col gap-1 overflow-y-auto">
           {links.map((link) => (
             <NavLink key={link.to} to={link.to} end={link.to === '/'} className={navClass}>
               <span>{link.icon}</span>
@@ -58,20 +61,21 @@ export default function Navbar() {
         </div>
       </aside>
 
-      <nav className="fixed bottom-0 left-0 right-0 z-50 flex border-t border-slate-200 bg-white md:hidden">
+      {/* Mobile bottom tab bar — horizontally scrollable, no wrapping */}
+      <nav className="fixed bottom-0 left-0 right-0 z-50 flex overflow-x-auto border-t border-slate-200 bg-white md:hidden">
         {links.map((link) => (
           <NavLink
             key={link.to}
             to={link.to}
             end={link.to === '/'}
             className={({ isActive }) =>
-              `flex flex-1 flex-col items-center py-2 text-[10px] ${
+              `flex shrink-0 flex-col items-center px-3 py-2 text-[10px] ${
                 isActive ? 'text-green-600' : 'text-slate-500'
               }`
             }
           >
             <span className="text-lg">{link.icon}</span>
-            <span className="mt-0.5 truncate px-0.5">{link.label.split(' ')[0]}</span>
+            <span className="mt-0.5 whitespace-nowrap">{link.label.split(' ')[0]}</span>
           </NavLink>
         ))}
       </nav>

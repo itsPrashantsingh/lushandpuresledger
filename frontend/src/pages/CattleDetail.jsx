@@ -92,6 +92,7 @@ export default function CattleDetail() {
       <div className="rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
+            <p className="text-xs font-mono text-slate-400">{cattle.cattle_id || '—'}</p>
             <h1 className="text-2xl font-bold text-slate-800">{cattle.name}</h1>
             <p className="capitalize text-slate-500">{cattle.category}{cattle.breed ? ` · ${cattle.breed}` : ''}</p>
             {!cattle.active && <p className="mt-1 text-sm text-red-500">Inactive</p>}

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { todayISO, currentYearMonth } from '../lib/utils'
 import {
   exportMilkProduction,
+  exportButtermilkProduction,
   exportCustomerList,
   exportCattleList,
   exportMonthlyBillStatus,
@@ -16,6 +17,8 @@ export default function ImportExport() {
     return d.toISOString().slice(0, 10)
   })
   const [prodEnd, setProdEnd] = useState(todayISO())
+  const [bmStart, setBmStart] = useState(() => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10) })
+  const [bmEnd, setBmEnd] = useState(todayISO())
   const [deliveryStart, setDeliveryStart] = useState(prodStart)
   const [deliveryEnd, setDeliveryEnd] = useState(todayISO())
   const [salesStart, setSalesStart] = useState(prodStart)
@@ -78,9 +81,38 @@ export default function ImportExport() {
         </div>
       </div>
 
+      <div className="rounded-xl border border-purple-200 bg-purple-50 p-5">
+        <h2 className="font-semibold text-slate-800">🥛 Buttermilk Production</h2>
+        <p className="mt-1 text-sm text-slate-500">Per-customer buttermilk delivered for a date range — with quantity, rate, and amount</p>
+        <div className="mt-4 flex flex-wrap items-end gap-3">
+          <div>
+            <label className="text-xs text-slate-500">From</label>
+            <input type="date" value={bmStart} onChange={(e) => setBmStart(e.target.value)} className="mt-1 block rounded-lg border px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500">To</label>
+            <input type="date" value={bmEnd} onChange={(e) => setBmEnd(e.target.value)} className="mt-1 block rounded-lg border px-3 py-2 text-sm" />
+          </div>
+          <button
+            disabled={!!loading}
+            onClick={() => runExport(() => exportButtermilkProduction(bmStart, bmEnd, 'xlsx'), 'Buttermilk production (Excel)')}
+            className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+          >
+            Export Excel
+          </button>
+          <button
+            disabled={!!loading}
+            onClick={() => runExport(() => exportButtermilkProduction(bmStart, bmEnd, 'csv'), 'Buttermilk production (CSV)')}
+            className="rounded-lg border border-purple-300 bg-white px-4 py-2 text-sm hover:bg-purple-50 disabled:opacity-50"
+          >
+            Export CSV
+          </button>
+        </div>
+      </div>
+
       <div className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="font-semibold text-slate-800">🚚 Customer Deliveries</h2>
-        <p className="mt-1 text-sm text-slate-500">Per-customer morning/evening milk taken for a date range</p>
+        <p className="mt-1 text-sm text-slate-500">Per-customer milk + buttermilk deliveries for a date range — with rate and daily totals</p>
         <div className="mt-4 flex flex-wrap items-end gap-3">
           <div>
             <label className="text-xs text-slate-500">From</label>
@@ -151,7 +183,7 @@ export default function ImportExport() {
 
       <div className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="font-semibold text-slate-800">👥 Customer List</h2>
-        <p className="mt-1 text-sm text-slate-500">All customers with main fields + custom fields as columns</p>
+        <p className="mt-1 text-sm text-slate-500">All customers — name, rate, qty, buttermilk subscription + custom fields. Compatible with re-import.</p>
         <div className="mt-4 flex gap-3">
           <button
             disabled={!!loading}
@@ -172,7 +204,7 @@ export default function ImportExport() {
 
       <div className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="font-semibold text-slate-800">🧾 Monthly Bill Status</h2>
-        <p className="mt-1 text-sm text-slate-500">Each customer's litres, bill amount, paid, balance, and status for a month</p>
+        <p className="mt-1 text-sm text-slate-500">Each customer's milk litres, buttermilk litres/amount, total bill, paid, balance, and status for a month</p>
         <div className="mt-4 flex flex-wrap items-end gap-3">
           <div>
             <label className="text-xs text-slate-500">Month</label>

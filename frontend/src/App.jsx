@@ -7,12 +7,14 @@ import Dashboard from './pages/Dashboard'
 import Cattle from './pages/Cattle'
 import CattleDetail from './pages/CattleDetail'
 import MilkProduction from './pages/MilkProduction'
+import ButtermilkProduction from './pages/ButtermilkProduction'
 import DailyEntry from './pages/DailyEntry'
 import Customers from './pages/Customers'
 import CustomerDetail from './pages/CustomerDetail'
 import Bills from './pages/Bills'
 import Sales from './pages/Sales'
 import Expenses from './pages/Expenses'
+import Inventory from './pages/Inventory'
 import Reminders from './pages/Reminders'
 import ImportExport from './pages/ImportExport'
 import ActivityLogs from './pages/ActivityLogs'
@@ -45,6 +47,7 @@ export default function App() {
                   <Routes>
                     <Route path="/" element={<Dashboard />} />
                     <Route path="/milk-production" element={<MilkProduction />} />
+                    <Route path="/buttermilk-production" element={<ButtermilkProduction />} />
                     <Route path="/cattle" element={<Cattle />} />
                     <Route path="/cattle/:id" element={<CattleDetail />} />
                     <Route path="/daily-entry" element={<DailyEntry />} />
@@ -53,6 +56,7 @@ export default function App() {
                     <Route path="/bills" element={<Bills />} />
                     <Route path="/sales" element={<Sales />} />
                     <Route path="/expenses" element={<Expenses />} />
+                    <Route path="/inventory" element={<Inventory />} />
                     <Route path="/reminders" element={<Reminders />} />
                     <Route path="/import-export" element={<ImportExport />} />
                     <Route path="/logs" element={<ActivityLogs />} />

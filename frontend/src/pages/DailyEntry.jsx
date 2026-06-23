@@ -3,11 +3,13 @@ import { todayISO, formatCurrency } from '../lib/utils'
 import Toast from '../components/Toast'
 import QtyControl from '../components/QtyControl'
 import { apiGet, apiPost } from '../lib/api'
+import { supabase } from '../lib/supabase'
 
 export default function DailyEntry() {
   const [date, setDate] = useState(todayISO())
   const [customers, setCustomers] = useState([])
   const [entries, setEntries] = useState({})
+  const [buttermilkEntries, setButtermilkEntries] = useState({})
   const [session, setSession] = useState({ status: 'locked' })
   const [search, setSearch] = useState('')
   const [saving, setSaving] = useState(false)
@@ -38,6 +40,29 @@ export default function DailyEntry() {
     try {
       const { data } = await apiGet(`/api/daily-entry?date=${date}`)
       applyServerState(data)
+
+      const subscribedIds = (data.customers || []).filter((c) => c.buttermilk_required).map((c) => c.id)
+      if (subscribedIds.length) {
+        const { data: bmData } = await supabase
+          .from('buttermilk_entries')
+          .select('customer_id, quantity, rate')
+          .eq('date', date)
+          .in('customer_id', subscribedIds)
+        const customersById = {}
+        for (const c of data.customers || []) customersById[c.id] = c
+        const bmMap = {}
+        for (const cid of subscribedIds) {
+          const existing = (bmData || []).find((b) => b.customer_id === cid)
+          const c = customersById[cid]
+          bmMap[cid] = {
+            quantity: existing ? Number(existing.quantity) : Number(c?.buttermilk_quantity || 0),
+            rate: existing ? Number(existing.rate) : Number(c?.buttermilk_rate || 0)
+          }
+        }
+        setButtermilkEntries(bmMap)
+      } else {
+        setButtermilkEntries({})
+      }
     } catch (err) {
       setToast({ message: err.response?.data?.error || err.message || 'Could not load deliveries', type: 'error' })
     } finally {
@@ -55,6 +80,12 @@ export default function DailyEntry() {
   function updateEntry(id, field, value) {
     if (isLocked) return
     setEntries((prev) => ({ ...prev, [id]: { ...prev[id], [field]: value } }))
+    markDirty()
+  }
+
+  function updateButtermilk(id, value) {
+    if (isLocked) return
+    setButtermilkEntries((prev) => ({ ...prev, [id]: { ...prev[id], quantity: value } }))
     markDirty()
   }
 
@@ -79,6 +110,22 @@ export default function DailyEntry() {
         delivered: e.delivered !== false
       }
     })
+  }
+
+  async function saveButtermilkEntries() {
+    const rows = []
+    for (const c of customers) {
+      if (!c.buttermilk_required) continue
+      const bm = buttermilkEntries[c.id]
+      if (!bm) continue
+      const qty = Number(bm.quantity) || 0
+      if (qty > 0) {
+        rows.push({ customer_id: c.id, date, quantity: qty, rate: Number(bm.rate) || Number(c.buttermilk_rate) || 0 })
+      }
+    }
+    if (rows.length) {
+      await supabase.from('buttermilk_entries').upsert(rows, { onConflict: 'customer_id,date' })
+    }
   }
 
   async function unlockEntries() {
@@ -112,6 +159,7 @@ export default function DailyEntry() {
     setSaving(true)
     try {
       const payload = buildPayload()
+      await saveButtermilkEntries()
       const { data } = await apiPost('/api/daily-entry/finalize', { date, entries: payload })
       applyServerState(data)
       const delivered = payload.filter((entry) => entry.delivered && (entry.morning_qty || entry.evening_qty)).length
@@ -138,6 +186,7 @@ export default function DailyEntry() {
     if (!e?.delivered) return s
     return s + (Number(e.morning_qty) + Number(e.evening_qty)) * Number(e.rate)
   }, 0)
+  const buttermilkSubscribers = customers.filter((c) => c.buttermilk_required).length
   const customCount = customers.reduce((sum, customer) => {
     const e = entries[customer.id]
     if (!e) return sum
@@ -173,6 +222,7 @@ export default function DailyEntry() {
 
       <div className="mb-3 rounded-lg bg-green-600 px-3 py-2 text-center text-sm font-medium text-white">
         {totalDelivered.toFixed(1)} L planned · {formatCurrency(totalAmount)} · {customCount} custom · {filtered.length} customers
+        {buttermilkSubscribers > 0 && ` · ${buttermilkSubscribers} buttermilk`}
       </div>
 
       {loading && <p className="rounded-lg border border-slate-200 bg-white p-4 text-center text-sm text-slate-500">Loading deliveries...</p>}
@@ -189,9 +239,11 @@ export default function DailyEntry() {
               <div className="mb-2 flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <p className="truncate font-semibold text-slate-800">{c.name}</p>
+                  {c.customer_id && <p className="text-xs font-mono text-slate-400">{c.customer_id}</p>}
                   <div className="flex gap-2 text-[10px]">
                     {e.saved && <span className="text-green-600">final saved</span>}
                     {rowCustom && <span className="text-amber-600">custom</span>}
+                    {c.buttermilk_required && <span className="text-purple-600">+buttermilk</span>}
                   </div>
                 </div>
                 <button
@@ -206,6 +258,17 @@ export default function DailyEntry() {
                 <div className="grid grid-cols-2 gap-2">
                   <QtyControl label="Morning" value={e.morning_qty} disabled={isLocked} onChange={(v) => updateEntry(c.id, 'morning_qty', v)} />
                   <QtyControl label="Evening" value={e.evening_qty} disabled={isLocked} onChange={(v) => updateEntry(c.id, 'evening_qty', v)} color="amber" />
+                </div>
+              )}
+              {c.buttermilk_required && buttermilkEntries[c.id] && (
+                <div className="mt-2 rounded-lg border border-purple-200 bg-purple-50 p-2">
+                  <QtyControl
+                    label={`Buttermilk (L) @ ₹${buttermilkEntries[c.id].rate}/L`}
+                    value={buttermilkEntries[c.id].quantity}
+                    disabled={isLocked}
+                    onChange={(v) => updateButtermilk(c.id, v)}
+                    color="amber"
+                  />
                 </div>
               )}
             </div>

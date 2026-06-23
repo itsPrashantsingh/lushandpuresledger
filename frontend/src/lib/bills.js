@@ -19,19 +19,22 @@ export async function generateBillId() {
   return data
 }
 
-export async function createBill(customerId, periodStart, periodEnd, entries, customer = null) {
+export async function createBill(customerId, periodStart, periodEnd, entries, customer = null, buttermilkData = null) {
   const valid = billableEntries(entries)
-  const subtotal = entrySubtotal(valid)
+  const milkSubtotal = entrySubtotal(valid)
+  const buttermilkQty = buttermilkData?.totalQty || 0
+  const buttermilkSubtotal = buttermilkData?.subtotal || 0
 
-  if (valid.length === 0) {
+  if (valid.length === 0 && buttermilkSubtotal <= 0) {
     throw new Error('No deliveries with quantity — cannot create bill')
   }
-  if (subtotal <= 0) {
+  if (milkSubtotal <= 0 && buttermilkSubtotal <= 0) {
     throw new Error('Bill amount is zero — cannot create bill')
   }
 
   const totalLitres = valid.reduce((s, e) => s + Number(e.total_qty), 0)
-  const gst = calculateGst(subtotal)
+  const combinedSubtotal = milkSubtotal + buttermilkSubtotal
+  const gst = calculateGst(combinedSubtotal)
   const billId = await generateBillId()
 
   const { data, error } = await supabase
@@ -47,7 +50,9 @@ export async function createBill(customerId, periodStart, periodEnd, entries, cu
       sgst: gst.sgst,
       igst: gst.igst,
       gst_rate: gst.gstRate,
-      total_amount: gst.grandTotal
+      total_amount: gst.grandTotal,
+      buttermilk_total_qty: buttermilkQty,
+      buttermilk_subtotal: buttermilkSubtotal
     })
     .select('*, customers(*)')
     .single()
@@ -176,11 +181,19 @@ export async function markCashPayment(bill, amount, customer) {
 export async function generateAllMonthlyBills(month, { withRazorpay = true, onProgress } = {}) {
   const { start, end } = getMonthBounds(month)
 
-  const [{ data: customers }, { data: existingBills }, { data: allEntries }] = await Promise.all([
+  const [{ data: customers }, { data: existingBills }, { data: allEntries }, { data: allButtermilk }] = await Promise.all([
     supabase.from('customers').select('*').eq('active', true).order('name'),
     supabase.from('bills').select('customer_id').gte('period_start', start).lte('period_end', end),
-    supabase.from('daily_entries').select('*').gte('date', start).lte('date', end).order('date')
+    supabase.from('daily_entries').select('*').gte('date', start).lte('date', end).order('date'),
+    supabase.from('buttermilk_entries').select('customer_id, quantity, rate, amount').gte('date', start).lte('date', end)
   ])
+
+  const buttermilkByCustomer = {}
+  for (const b of allButtermilk || []) {
+    if (!buttermilkByCustomer[b.customer_id]) buttermilkByCustomer[b.customer_id] = { totalQty: 0, subtotal: 0 }
+    buttermilkByCustomer[b.customer_id].totalQty += Number(b.quantity)
+    buttermilkByCustomer[b.customer_id].subtotal += Number(b.amount)
+  }
 
   const billedCustomers = new Set((existingBills || []).map((b) => b.customer_id))
   const results = {
@@ -199,23 +212,24 @@ export async function generateAllMonthlyBills(month, { withRazorpay = true, onPr
       continue
     }
     const entries = billableEntries((allEntries || []).filter((e) => e.customer_id === customer.id))
-    if (!entries.length) {
-      results.noDelivery.push(customer.name)
+    const bm = buttermilkByCustomer[customer.id] || null
+    const hasMilk = entries.length > 0 && entrySubtotal(entries) > 0
+    const hasButtermilk = bm && bm.subtotal > 0
+
+    if (!hasMilk && !hasButtermilk) {
+      if (!entries.length && !hasButtermilk) results.noDelivery.push(customer.name)
+      else results.zeroAmount.push(customer.name)
       continue
     }
-    if (entrySubtotal(entries) <= 0) {
-      results.zeroAmount.push(customer.name)
-      continue
-    }
-    eligible.push({ customer, entries })
+    eligible.push({ customer, entries, buttermilkData: bm })
   }
 
   let i = 0
-  for (const { customer, entries } of eligible) {
+  for (const { customer, entries, buttermilkData } of eligible) {
     i++
     onProgress?.({ step: 'bill', current: i, total: eligible.length, name: customer.name })
     try {
-      const bill = await createBill(customer.id, start, end, entries, customer)
+      const bill = await createBill(customer.id, start, end, entries, customer, buttermilkData)
       results.created.push(bill)
 
       if (withRazorpay && Number(bill.total_amount) > 0) {

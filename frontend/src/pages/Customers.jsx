@@ -16,10 +16,11 @@ export default function Customers() {
   const [loading, setLoading] = useState(true)
   const [importMsg, setImportMsg] = useState('')
   const [importing, setImporting] = useState(false)
+  const [phoneError, setPhoneError] = useState('')
   const fileRef = useRef(null)
 
   function emptyForm() {
-    return { name: '', whatsapp_no: '', address: '', rate: 83, morning_qty: 0, evening_qty: 0, active: true }
+    return { name: '', whatsapp_no: '', address: '', rate: 83, morning_qty: 0, evening_qty: 0, active: true, buttermilk_required: false, buttermilk_quantity: 0, buttermilk_rate: 0 }
   }
 
   useEffect(() => {
@@ -80,7 +81,10 @@ export default function Customers() {
       rate: customer.rate,
       morning_qty: customer.morning_qty,
       evening_qty: customer.evening_qty,
-      active: customer.active
+      active: customer.active,
+      buttermilk_required: customer.buttermilk_required || false,
+      buttermilk_quantity: customer.buttermilk_quantity || 0,
+      buttermilk_rate: customer.buttermilk_rate || 0
     })
     const cf = customer.custom_fields || {}
     const pairs = Object.entries(cf).map(([key, value]) => ({ key, value }))
@@ -90,12 +94,19 @@ export default function Customers() {
 
   async function handleSave(e) {
     e.preventDefault()
+    const digits = form.whatsapp_no.replace(/\D/g, '')
+    if (digits.length !== 10) {
+      setPhoneError('WhatsApp number must be exactly 10 digits')
+      return
+    }
+    setPhoneError('')
+
     const custom_fields = {}
     customFields.forEach(({ key, value }) => {
       if (key.trim()) custom_fields[key.trim()] = value
     })
 
-    const payload = { ...form, custom_fields }
+    const payload = { ...form, whatsapp_no: digits, custom_fields }
 
     if (editing) {
       const { error } = await supabase.from('customers').update(payload).eq('id', editing.id)
@@ -191,12 +202,46 @@ export default function Customers() {
 
             <div className="space-y-3">
               <input required placeholder="Name *" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full rounded-lg border px-3 py-2" />
-              <input required placeholder="WhatsApp Number *" value={form.whatsapp_no} onChange={(e) => setForm({ ...form, whatsapp_no: e.target.value })} className="w-full rounded-lg border px-3 py-2" />
+              <div>
+                <input
+                  required
+                  type="tel"
+                  placeholder="WhatsApp Number * (10 digits)"
+                  value={form.whatsapp_no}
+                  maxLength={10}
+                  onChange={(e) => {
+                    const v = e.target.value.replace(/\D/g, '').slice(0, 10)
+                    setForm({ ...form, whatsapp_no: v })
+                    setPhoneError(v.length > 0 && v.length < 10 ? 'Must be 10 digits' : '')
+                  }}
+                  className={`w-full rounded-lg border px-3 py-2 ${phoneError ? 'border-red-400' : ''}`}
+                />
+                {phoneError && <p className="mt-1 text-xs text-red-500">{phoneError}</p>}
+              </div>
               <input placeholder="Address" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="w-full rounded-lg border px-3 py-2" />
               <div className="grid grid-cols-3 gap-2">
                 <input type="number" placeholder="Rate ₹/L" value={form.rate} onChange={(e) => setForm({ ...form, rate: e.target.value })} className="rounded-lg border px-3 py-2" />
                 <input type="number" step="0.5" placeholder="Morning L" value={form.morning_qty} onChange={(e) => setForm({ ...form, morning_qty: e.target.value })} className="rounded-lg border px-3 py-2" />
                 <input type="number" step="0.5" placeholder="Evening L" value={form.evening_qty} onChange={(e) => setForm({ ...form, evening_qty: e.target.value })} className="rounded-lg border px-3 py-2" />
+              </div>
+
+              <div className="rounded-lg border border-purple-200 bg-purple-50 p-3">
+                <label className="flex items-center gap-2 font-medium text-purple-800">
+                  <input type="checkbox" checked={form.buttermilk_required} onChange={(e) => setForm({ ...form, buttermilk_required: e.target.checked })} />
+                  Buttermilk Subscription
+                </label>
+                {form.buttermilk_required && (
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs text-purple-600">Qty (L/day)</label>
+                      <input type="number" step="0.5" min="0" value={form.buttermilk_quantity} onChange={(e) => setForm({ ...form, buttermilk_quantity: e.target.value })} className="mt-1 w-full rounded-lg border border-purple-200 px-3 py-2" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-purple-600">Rate ₹/L</label>
+                      <input type="number" step="0.5" min="0" value={form.buttermilk_rate} onChange={(e) => setForm({ ...form, buttermilk_rate: e.target.value })} className="mt-1 w-full rounded-lg border border-purple-200 px-3 py-2" />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>

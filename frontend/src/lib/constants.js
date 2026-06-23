@@ -1,5 +1,5 @@
 const DEFAULTS = {
-  dairyName: 'FreshMilk Dairy',
+  dairyName: 'Lush & Pures',
   dairyPhone: '9876543210',
   dairyUpi: 'freshmilk@upi',
   dairyAddress: 'Your dairy address, City, State - PIN',

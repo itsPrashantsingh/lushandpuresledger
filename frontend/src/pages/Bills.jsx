@@ -114,7 +114,9 @@ export default function Bills() {
     const packages = await getMonthlyBillPackages(month)
     const unpaid = packages.filter((pkg) => {
       const paid = paidMap[pkg.bill.id] || 0
-      return getBillStatus(pkg.bill, paid) !== 'paid' && pkg.entries.length > 0
+      const hasMilk = pkg.entries.length > 0
+      const hasButtermilk = Number(pkg.bill.buttermilk_subtotal) > 0
+      return getBillStatus(pkg.bill, paid) !== 'paid' && (hasMilk || hasButtermilk)
     })
 
     if (!unpaid.length) {

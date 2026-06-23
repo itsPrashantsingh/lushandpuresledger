@@ -13,6 +13,7 @@ export default function CattleCard({ cattle, monthLitres }) {
     >
       <div className="flex items-start justify-between gap-2">
         <div>
+          <p className="text-xs font-mono text-slate-400">{cattle.cattle_id || '—'}</p>
           <h3 className="font-semibold text-slate-800">{cattle.name}</h3>
           <p className="text-sm text-slate-500">{cattle.breed || '—'}</p>
         </div>

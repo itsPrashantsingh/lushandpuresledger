@@ -6,7 +6,10 @@ const MAIN_FIELDS = {
   address: ['address', 'addr', 'location'],
   rate: ['rate', 'price', 'rate_per_litre', 'rate per litre', 'price_per_litre'],
   morning_qty: ['morning_qty', 'morning', 'morning_l', 'morning litres', 'morning_qty_l'],
-  evening_qty: ['evening_qty', 'evening', 'evening_l', 'evening litres', 'evening_qty_l']
+  evening_qty: ['evening_qty', 'evening', 'evening_l', 'evening litres', 'evening_qty_l'],
+  buttermilk_required: ['buttermilk_required', 'buttermilk', 'bm_required'],
+  buttermilk_quantity: ['buttermilk_quantity', 'bm_qty', 'buttermilk_qty'],
+  buttermilk_rate: ['buttermilk_rate', 'bm_rate']
 }
 
 function normalizeKey(key) {
@@ -59,6 +62,9 @@ export function rowsToCustomers(rows) {
         rate: 83,
         morning_qty: 0,
         evening_qty: 0,
+        buttermilk_required: false,
+        buttermilk_quantity: 0,
+        buttermilk_rate: 0,
         custom_fields: {},
         active: true
       }
@@ -69,8 +75,10 @@ export function rowsToCustomers(rows) {
         if (!strVal) return
 
         if (field) {
-          if (field === 'rate' || field === 'morning_qty' || field === 'evening_qty') {
+          if (['rate', 'morning_qty', 'evening_qty', 'buttermilk_quantity', 'buttermilk_rate'].includes(field)) {
             customer[field] = Number(strVal) || 0
+          } else if (field === 'buttermilk_required') {
+            customer[field] = ['yes', 'true', '1', 'y'].includes(strVal.toLowerCase())
           } else {
             customer[field] = strVal
           }
@@ -113,6 +121,9 @@ export const IMPORT_TEMPLATE_HEADERS = [
   'rate',
   'morning_qty',
   'evening_qty',
+  'buttermilk_required',
+  'buttermilk_quantity',
+  'buttermilk_rate',
   'flat_no',
   'notes'
 ]
@@ -127,8 +138,23 @@ export function downloadImportTemplate() {
       rate: 83,
       morning_qty: 1,
       evening_qty: 1,
+      buttermilk_required: 'no',
+      buttermilk_quantity: 0,
+      buttermilk_rate: 0,
       flat_no: 'B-204',
       notes: 'Ring bell twice'
+    }, {
+      name: 'Suresh Sharma',
+      whatsapp_no: '9988776655',
+      address: 'Main Market',
+      rate: 80,
+      morning_qty: 2,
+      evening_qty: 1,
+      buttermilk_required: 'yes',
+      buttermilk_quantity: 1,
+      buttermilk_rate: 20,
+      flat_no: '',
+      notes: ''
     }]
   }])
 }

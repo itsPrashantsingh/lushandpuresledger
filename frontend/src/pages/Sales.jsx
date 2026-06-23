@@ -392,9 +392,21 @@ export default function Sales() {
             ))}
           </select>
           <input placeholder="Buyer name" value={saleForm.buyer_name} onChange={(e) => setSaleForm({ ...saleForm, buyer_name: e.target.value })} className="rounded-lg border px-3 py-2" required />
-          <input placeholder="Buyer phone" value={saleForm.buyer_phone} onChange={(e) => setSaleForm({ ...saleForm, buyer_phone: e.target.value })} className="rounded-lg border px-3 py-2" />
+          <input
+            type="tel"
+            placeholder="Buyer phone (10 digits)"
+            maxLength={10}
+            value={saleForm.buyer_phone}
+            onChange={(e) => setSaleForm({ ...saleForm, buyer_phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+            className="rounded-lg border px-3 py-2"
+          />
           <input placeholder="Buyer GSTIN" value={saleForm.buyer_gstin} onChange={(e) => setSaleForm({ ...saleForm, buyer_gstin: e.target.value.toUpperCase() })} className="rounded-lg border px-3 py-2" />
-          <input type="number" step="0.001" placeholder={selectedProduct ? `Quantity in ${selectedProduct.unit}` : 'Quantity'} value={saleForm.quantity} onChange={(e) => setSaleForm({ ...saleForm, quantity: e.target.value })} className="rounded-lg border px-3 py-2" required />
+          <div className="relative">
+            <input type="number" step="0.001" placeholder="Quantity" value={saleForm.quantity} onChange={(e) => setSaleForm({ ...saleForm, quantity: e.target.value })} className="w-full rounded-lg border px-3 py-2 pr-14" required />
+            {selectedProduct && (
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">{selectedProduct.unit}</span>
+            )}
+          </div>
           <select value={saleForm.payment_mode} onChange={(e) => setSaleForm({ ...saleForm, payment_mode: e.target.value })} className="rounded-lg border px-3 py-2">
             <option value="cash">Cash</option>
             <option value="upi">UPI</option>
@@ -437,8 +449,14 @@ export default function Sales() {
             <option value="pcs">pcs</option>
             <option value="box">box</option>
           </select>
-          <input type="number" step="0.001" placeholder="Stock qty" value={productForm.stock_qty} onChange={(e) => setProductForm({ ...productForm, stock_qty: e.target.value })} className="rounded-lg border px-3 py-2" />
-          <input type="number" step="0.01" placeholder={`Price per ${productForm.unit || 'unit'}`} value={productForm.price} onChange={(e) => setProductForm({ ...productForm, price: e.target.value })} className="rounded-lg border px-3 py-2" required />
+          <div className="relative">
+            <input type="number" step="0.001" placeholder="Stock qty" value={productForm.stock_qty} onChange={(e) => setProductForm({ ...productForm, stock_qty: e.target.value })} className="w-full rounded-lg border px-3 py-2 pr-10" />
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">{productForm.unit}</span>
+          </div>
+          <div className="relative">
+            <input type="number" step="0.01" placeholder="Price" value={productForm.price} onChange={(e) => setProductForm({ ...productForm, price: e.target.value })} className="w-full rounded-lg border px-3 py-2 pr-14" required />
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">₹/{productForm.unit}</span>
+          </div>
           <input type="number" step="0.01" placeholder="GST %" value={productForm.gst_rate} onChange={(e) => setProductForm({ ...productForm, gst_rate: e.target.value })} className="rounded-lg border px-3 py-2" />
           <input placeholder="HSN" value={productForm.hsn_code} onChange={(e) => setProductForm({ ...productForm, hsn_code: e.target.value })} className="rounded-lg border px-3 py-2" />
         </div>

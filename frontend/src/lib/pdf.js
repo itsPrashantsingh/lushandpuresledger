@@ -21,6 +21,9 @@ export function generateBill(customer, entries, bill) {
   const pageWidth = doc.internal.pageSize.getWidth()
   const contentW = pageWidth - MARGIN * 2
 
+  const milkSubtotal = entries.reduce((s, e) => s + Number(e.amount), 0)
+  const buttermilkQty = Number(bill.buttermilk_total_qty || 0)
+  const buttermilkSubtotal = Number(bill.buttermilk_subtotal || 0)
   const subtotal = Number(bill.subtotal ?? bill.total_amount)
   const cgst = Number(bill.cgst ?? 0)
   const sgst = Number(bill.sgst ?? 0)
@@ -73,57 +76,49 @@ export function generateBill(customer, entries, bill) {
   y += 28
 
   // ── Line items (Tally column layout) ──
-  const tableBody = entries.map((e, idx) => [
-    String(idx + 1),
-    formatDateBill(e.date),
-    'Fresh Cow Milk',
-    formatQtyPdf(e.morning_qty),
-    formatQtyPdf(e.evening_qty),
-    formatQtyPdf(e.total_qty),
-    formatRatePdf(e.rate),
-    formatAmountPdf(e.amount)
-  ])
+  const totalMorning = entries.reduce((s, e) => s + Number(e.morning_qty), 0)
+  const totalEvening = entries.reduce((s, e) => s + Number(e.evening_qty), 0)
+  const milkLitres = entries.reduce((s, e) => s + Number(e.total_qty), 0)
+  const grandTableTotal = milkSubtotal + buttermilkSubtotal
 
-  const totalLitres = entries.reduce((s, e) => s + Number(e.total_qty), 0)
+  const uniqueRates = [...new Set(entries.map((e) => Number(e.rate)))]
+  const milkRateDisplay = uniqueRates.length === 1 ? formatRatePdf(uniqueRates[0]) : '(mixed)'
+
+  const tableBody = []
+  if (entries.length > 0) {
+    tableBody.push(['1', 'Fresh Cow Milk', formatQtyPdf(totalMorning), formatQtyPdf(totalEvening), formatQtyPdf(milkLitres), milkRateDisplay, formatAmountPdf(milkSubtotal)])
+  }
+  if (buttermilkQty > 0 && buttermilkSubtotal > 0) {
+    const bmRate = buttermilkSubtotal / buttermilkQty
+    tableBody.push([String(tableBody.length + 1), 'Buttermilk', '', '', formatQtyPdf(buttermilkQty), formatRatePdf(bmRate), formatAmountPdf(buttermilkSubtotal)])
+  }
+
+  const tableFooter = [['', 'Total', '', '', '', '', formatAmountPdf(grandTableTotal)]]
 
   autoTable(doc, {
     startY: y,
-    head: [['#', 'Date', 'Particulars', 'Morn (L)', 'Eve (L)', 'Total (L)', 'Rate', 'Amount']],
+    head: [['#', 'Particulars', 'Morn (L)', 'Eve (L)', 'Qty (L)', 'Rate', 'Amount']],
     body: tableBody,
-    foot: [['', '', 'Total', '', '', formatQtyPdf(totalLitres), '', formatAmountPdf(subtotal)]],
+    foot: tableFooter,
     theme: 'grid',
-    styles: {
-      fontSize: 8,
-      cellPadding: 2,
-      lineColor: LINE,
-      lineWidth: 0.2,
-      textColor: INK
-    },
-    headStyles: {
-      fillColor: [248, 250, 252],
-      textColor: INK,
-      fontStyle: 'bold',
-      halign: 'center'
-    },
-    footStyles: {
-      fillColor: [248, 250, 252],
-      textColor: INK,
-      fontStyle: 'bold'
-    },
+    styles: { fontSize: 8, cellPadding: 2, lineColor: LINE, lineWidth: 0.2, textColor: INK },
+    headStyles: { fillColor: [248, 250, 252], textColor: INK, fontStyle: 'bold', halign: 'center' },
+    footStyles: { fillColor: [248, 250, 252], textColor: INK, fontStyle: 'bold' },
     columnStyles: {
       0: { halign: 'center', cellWidth: 8 },
-      1: { halign: 'center', cellWidth: 22 },
-      2: { halign: 'left' },
-      3: { halign: 'right', cellWidth: 16 },
-      4: { halign: 'right', cellWidth: 16 },
+      1: { halign: 'left' },
+      2: { halign: 'right', cellWidth: 18 },
+      3: { halign: 'right', cellWidth: 18 },
+      4: { halign: 'right', cellWidth: 20 },
       5: { halign: 'right', cellWidth: 18 },
-      6: { halign: 'right', cellWidth: 16 },
-      7: { halign: 'right', cellWidth: 28 }
+      6: { halign: 'right', cellWidth: 30 }
     },
     margin: { left: MARGIN, right: MARGIN }
   })
 
-  y = doc.lastAutoTable.finalY + 6
+  y = doc.lastAutoTable.finalY + 4
+
+  y += 2
 
   // ── Summary box (right-aligned, Tally style) ──
   const summaryX = pageWidth - MARGIN - 72

@@ -23,7 +23,11 @@ export default function BillCard({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h3 className="font-semibold text-slate-800">{bill.customers?.name || 'Customer'}</h3>
+          {bill.customers?.customer_id && <p className="text-xs font-mono text-slate-400">{bill.customers.customer_id}</p>}
           <p className="text-sm text-slate-500">{bill.id} · {formatPeriod(bill.period_start, bill.period_end)}</p>
+          {Number(bill.buttermilk_subtotal) > 0 && (
+            <p className="text-xs text-purple-600">+ Buttermilk {formatCurrency(bill.buttermilk_subtotal)}</p>
+          )}
         </div>
         <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${statusBadgeClass(status)}`}>
           {status}
