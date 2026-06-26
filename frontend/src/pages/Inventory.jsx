@@ -8,6 +8,7 @@ const EMPTY_ITEM = {
   unit: 'pcs',
   quantity: '',
   current_quantity: '',
+  in_use_quantity: '',
   purchase_date: todayISO(),
   purchase_price: '',
   notes: ''
@@ -55,6 +56,7 @@ export default function Inventory() {
       unit: item.unit,
       quantity: String(item.quantity),
       current_quantity: String(item.current_quantity),
+      in_use_quantity: String(item.in_use_quantity || 0),
       purchase_date: item.purchase_date || todayISO(),
       purchase_price: String(item.purchase_price || ''),
       notes: item.notes || ''
@@ -71,6 +73,7 @@ export default function Inventory() {
       unit: itemForm.unit.trim() || 'pcs',
       quantity: Number(itemForm.quantity) || 0,
       current_quantity: Number(itemForm.current_quantity) || 0,
+      in_use_quantity: Number(itemForm.in_use_quantity) || 0,
       purchase_date: itemForm.purchase_date || null,
       purchase_price: Number(itemForm.purchase_price) || 0,
       notes: itemForm.notes.trim() || null
@@ -200,6 +203,8 @@ export default function Inventory() {
                 <th className="px-4 py-3">Category</th>
                 <th className="px-4 py-3">Purchase Qty</th>
                 <th className="px-4 py-3">Current Qty</th>
+                <th className="px-4 py-3">In Use</th>
+                <th className="px-4 py-3">Available</th>
                 <th className="px-4 py-3">Purchase Price</th>
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Actions</th>
@@ -218,6 +223,13 @@ export default function Inventory() {
                     <span className={`font-medium ${Number(item.current_quantity) <= 0 ? 'text-red-600' : 'text-green-700'}`}>
                       {Number(item.current_quantity)} {item.unit}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-amber-700">{Number(item.in_use_quantity || 0)} {item.unit}</td>
+                  <td className="px-4 py-3">
+                    {(() => {
+                      const avail = Number(item.current_quantity) - Number(item.in_use_quantity || 0)
+                      return <span className={`font-medium ${avail <= 0 ? 'text-red-600' : 'text-slate-700'}`}>{avail} {item.unit}</span>
+                    })()}
                   </td>
                   <td className="px-4 py-3">{formatCurrency(item.purchase_price)}</td>
                   <td className="px-4 py-3">{item.purchase_date ? formatDate(item.purchase_date) : '—'}</td>
@@ -268,10 +280,14 @@ export default function Inventory() {
                   <input type="number" min="0" step="0.1" placeholder="0" value={itemForm.quantity} onChange={(e) => setItemForm({ ...itemForm, quantity: e.target.value })} className="w-full rounded-lg border px-3 py-2" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="mb-1 block text-xs text-slate-500">Current Qty</label>
                   <input type="number" min="0" step="0.1" placeholder="0" value={itemForm.current_quantity} onChange={(e) => setItemForm({ ...itemForm, current_quantity: e.target.value })} className="w-full rounded-lg border px-3 py-2" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-amber-600">In Use Qty</label>
+                  <input type="number" min="0" step="0.1" placeholder="0" value={itemForm.in_use_quantity} onChange={(e) => setItemForm({ ...itemForm, in_use_quantity: e.target.value })} className="w-full rounded-lg border border-amber-200 px-3 py-2" />
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-slate-500">Purchase Price ₹</label>

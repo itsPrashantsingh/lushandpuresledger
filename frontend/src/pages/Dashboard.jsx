@@ -24,13 +24,16 @@ export default function Dashboard() {
     netProfit: 0, activeCustomers: 0, activeCattle: 0,
     collectionEfficiency: 0, productionEfficiency: 0
   })
-  const [revenueRange, setRevenueRange] = useState('month')
+  const [revenueFrom, setRevenueFrom] = useState(() => getMonthBounds(currentYearMonth()).start)
+  const [revenueTo, setRevenueTo] = useState(todayISO)
   const [revenueBreakdown, setRevenueBreakdown] = useState({ milk: 0, buttermilk: 0, products: 0, total: 0, expenses: 0, netProfit: 0, cashCollected: 0, outstanding: 0 })
   const [rawMilkDeliveries, setRawMilkDeliveries] = useState([])
   const [rawBmDeliveries, setRawBmDeliveries] = useState([])
   const [rawProductSalesAll, setRawProductSalesAll] = useState([])
   const [rawExpensesAll, setRawExpensesAll] = useState([])
   const [rawPaymentsAll, setRawPaymentsAll] = useState([])
+  const [milkChartCattle, setMilkChartCattle] = useState('total')
+  const [rawMilkChart30, setRawMilkChart30] = useState([])
   const [productionKpis, setProductionKpis] = useState({
     today: 0, thisMonth: 0, last30: 0, lifetime: 0
   })
@@ -65,13 +68,13 @@ export default function Dashboard() {
       allMilkDeliveriesRes, allBmDeliveriesRes
     ] = await Promise.all([
       supabase.from('payments').select('amount').gte('paid_at', start).lte('paid_at', end + 'T23:59:59'),
-      supabase.from('product_sales').select('total_amount').gte('date', start).lte('date', end),
+      supabase.from('product_sales').select('total_amount').gte('date', start).lte('date', end).eq('paid', true),
       supabase.from('bills').select('*, customers(*)').eq('paid', false),
       supabase.from('cattle_milk_entries').select('morning_litres, evening_litres, total_litres').gte('date', start).lte('date', end),
       supabase.from('daily_entries').select('total_qty').gte('date', start).lte('date', end),
       supabase.from('expenses').select('amount').gte('date', start).lte('date', end),
       supabase.from('payments').select('amount, paid_at'),
-      supabase.from('product_sales').select('total_amount, date'),
+      supabase.from('product_sales').select('total_amount, date').eq('paid', true),
       supabase.from('expenses').select('amount, date'),
       supabase.from('cattle_milk_entries').select('date, morning_litres, evening_litres, total_litres, cattle_id').gte('date', last30Days()[0].date),
       supabase.from('customers').select('id', { count: 'exact', head: true }).eq('active', true),
@@ -124,7 +127,7 @@ export default function Dashboard() {
     setRawCattleEntries(allCattleEntriesRes.data || [])
     setRawDailyEntries(allDeliveredRes.data || [])
 
-    // Store raw revenue data — recomputed in useEffect when revenueRange changes
+    // Store raw revenue data — recomputed in useEffect when date range changes
     setRawMilkDeliveries(allMilkDeliveriesRes.data || [])
     setRawBmDeliveries(allBmDeliveriesRes.data || [])
     setRawProductSalesAll(allProductSalesRes.data || [])
@@ -133,6 +136,9 @@ export default function Dashboard() {
 
     // Cattle list for filter
     setCattle(cattleListRes.data || [])
+
+    // Raw 30-day entries for milk chart (filtered per-cattle in useEffect)
+    setRawMilkChart30(cattleEntries30Res.data || [])
 
     // Production KPIs (total / all cattle)
     const allEntries = allCattleEntriesRes.data || []
@@ -152,17 +158,6 @@ export default function Dashboard() {
       return { month: m.label, revenue: milkRev + productRev, milkRevenue: milkRev, productRevenue: productRev, expenses: exp }
     })
     setRevenueChart(revData)
-
-    // Milk chart (30 days)
-    const days = last30Days()
-    const byDate = {}
-    for (const e of cattleEntries30Res.data || []) {
-      if (!byDate[e.date]) byDate[e.date] = { morning: 0, evening: 0, total: 0 }
-      byDate[e.date].morning += Number(e.morning_litres)
-      byDate[e.date].evening += Number(e.evening_litres)
-      byDate[e.date].total += Number(e.total_litres)
-    }
-    setMilkChart(days.map((d) => ({ day: d.label, morning: byDate[d.date]?.morning || 0, evening: byDate[d.date]?.evening || 0, total: byDate[d.date]?.total || 0 })))
 
     setUnpaidBills(billsWithPaid.filter((b) => getBillStatus(b, b.paidAmount) !== 'paid'))
 
@@ -238,35 +233,35 @@ export default function Dashboard() {
     loadCattleKpis()
   }, [selectedCattle, productionKpis])
 
-  // Recompute revenue breakdown whenever range or raw data changes
+  // Recompute revenue breakdown whenever date range or raw data changes
   useEffect(() => {
-    const ym = currentYearMonth()
-    const { start, end } = getMonthBounds(ym)
-    const sixStart = last6Months()[0].key + '-01'
-
-    const pickByDate = (arr) => {
-      if (revenueRange === 'month') return arr.filter((e) => e.date >= start && e.date <= end)
-      if (revenueRange === '6months') return arr.filter((e) => e.date >= sixStart)
-      return arr
-    }
-    const pickByPaidAt = (arr) => {
-      if (revenueRange === 'month') return arr.filter((e) => e.paid_at >= start && e.paid_at <= end + 'T23:59:59')
-      if (revenueRange === '6months') return arr.filter((e) => e.paid_at >= sixStart)
-      return arr
-    }
-
-    const milk = pickByDate(rawMilkDeliveries).reduce((s, e) => s + Number(e.amount), 0)
-    const buttermilk = pickByDate(rawBmDeliveries).reduce((s, e) => s + Number(e.amount), 0)
-    const products = pickByDate(rawProductSalesAll).reduce((s, e) => s + Number(e.total_amount), 0)
-    const expenses = pickByDate(rawExpensesAll).reduce((s, e) => s + Number(e.amount), 0)
-    const billPayments = pickByPaidAt(rawPaymentsAll).reduce((s, e) => s + Number(e.amount), 0)
-    // Product sales are collected at point of sale, so add them to cash collected
+    if (!revenueFrom || !revenueTo) return
+    const milk = rawMilkDeliveries.filter((e) => e.date >= revenueFrom && e.date <= revenueTo).reduce((s, e) => s + Number(e.amount), 0)
+    const buttermilk = rawBmDeliveries.filter((e) => e.date >= revenueFrom && e.date <= revenueTo).reduce((s, e) => s + Number(e.amount), 0)
+    const products = rawProductSalesAll.filter((e) => e.date >= revenueFrom && e.date <= revenueTo).reduce((s, e) => s + Number(e.total_amount), 0)
+    const expenses = rawExpensesAll.filter((e) => e.date >= revenueFrom && e.date <= revenueTo).reduce((s, e) => s + Number(e.amount), 0)
+    const billPayments = rawPaymentsAll.filter((e) => e.paid_at >= revenueFrom && e.paid_at <= revenueTo + 'T23:59:59').reduce((s, e) => s + Number(e.amount), 0)
     const cashCollected = billPayments + products
     const total = milk + buttermilk + products
-    // Outstanding = milk+BM earned but not yet paid by customers
     const outstanding = Math.max(0, milk + buttermilk - billPayments)
     setRevenueBreakdown({ milk, buttermilk, products, total, expenses, netProfit: total - expenses, cashCollected, outstanding })
-  }, [revenueRange, rawMilkDeliveries, rawBmDeliveries, rawProductSalesAll, rawExpensesAll, rawPaymentsAll])
+  }, [revenueFrom, revenueTo, rawMilkDeliveries, rawBmDeliveries, rawProductSalesAll, rawExpensesAll, rawPaymentsAll])
+
+  // Recompute milk chart whenever cattle filter or raw data changes
+  useEffect(() => {
+    const days = last30Days()
+    const entries = milkChartCattle === 'total'
+      ? rawMilkChart30
+      : rawMilkChart30.filter((e) => e.cattle_id === milkChartCattle)
+    const byDate = {}
+    for (const e of entries) {
+      if (!byDate[e.date]) byDate[e.date] = { morning: 0, evening: 0, total: 0 }
+      byDate[e.date].morning += Number(e.morning_litres)
+      byDate[e.date].evening += Number(e.evening_litres)
+      byDate[e.date].total += Number(e.total_litres)
+    }
+    setMilkChart(days.map((d) => ({ day: d.label, morning: byDate[d.date]?.morning || 0, evening: byDate[d.date]?.evening || 0, total: byDate[d.date]?.total || 0 })))
+  }, [milkChartCattle, rawMilkChart30])
 
   // Recompute supply vs production whenever range or raw data changes
   useEffect(() => {
@@ -326,16 +321,20 @@ export default function Dashboard() {
       <section>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Revenue & Profit</h2>
-          <div className="flex overflow-hidden rounded-lg border border-slate-200 bg-white text-xs font-medium">
-            {[['month', 'This Month'], ['6months', '6 Months'], ['alltime', 'All Time']].map(([val, label]) => (
-              <button
-                key={val}
-                onClick={() => setRevenueRange(val)}
-                className={`px-3 py-1.5 transition-colors ${revenueRange === val ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
-              >
-                {label}
-              </button>
-            ))}
+          <div className="flex items-center gap-2 text-sm">
+            <input
+              type="date"
+              value={revenueFrom}
+              onChange={(e) => setRevenueFrom(e.target.value)}
+              className="rounded-lg border border-slate-300 px-2 py-1 text-slate-700"
+            />
+            <span className="text-slate-400">to</span>
+            <input
+              type="date"
+              value={revenueTo}
+              onChange={(e) => setRevenueTo(e.target.value)}
+              className="rounded-lg border border-slate-300 px-2 py-1 text-slate-700"
+            />
           </div>
         </div>
         {/* Row 1 — key KPIs */}
@@ -496,7 +495,19 @@ export default function Dashboard() {
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <h2 className="mb-4 font-semibold text-slate-700">Milk Production — AM vs PM (30 days)</h2>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-semibold text-slate-700">Milk Production — AM vs PM (30 days)</h2>
+            <select
+              value={milkChartCattle}
+              onChange={(e) => setMilkChartCattle(e.target.value)}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+            >
+              <option value="total">All Cattle</option>
+              {cattle.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}{c.cattle_id ? ` (${c.cattle_id})` : ''}</option>
+              ))}
+            </select>
+          </div>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={milkChart}>
               <CartesianGrid strokeDasharray="3 3" />

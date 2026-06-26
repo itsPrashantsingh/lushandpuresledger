@@ -211,7 +211,9 @@ export default function Sales() {
       igst: totals.igst,
       total_amount: totals.total_amount,
       payment_mode: saleForm.payment_mode,
-      notes: saleForm.notes.trim() || null
+      notes: saleForm.notes.trim() || null,
+      paid: saleForm.payment_mode !== 'credit',
+      paid_at: saleForm.payment_mode !== 'credit' ? saleForm.date : null
     }
 
     const { data: savedRows, error } = editingSale
@@ -331,6 +333,16 @@ export default function Sales() {
     loadSales()
   }
 
+  async function markSalePaid(sale) {
+    const { error } = await supabase.from('product_sales').update({ paid: true, paid_at: todayISO() }).eq('id', sale.id)
+    if (error) {
+      setToast({ message: error.message, type: 'error' })
+      return
+    }
+    setToast({ message: `${sale.invoice_no} marked as paid`, type: 'success' })
+    loadSales()
+  }
+
   const activeProducts = products.filter((p) => p.active)
   const selectedProduct = products.find((p) => p.id === saleForm.product_id)
   const preview = useMemo(
@@ -343,6 +355,7 @@ export default function Sales() {
   const monthTotal = sales.reduce((s, sale) => s + Number(sale.total_amount), 0)
   const monthTaxable = sales.reduce((s, sale) => s + Number(sale.subtotal), 0)
   const monthGst = sales.reduce((s, sale) => s + Number(sale.cgst) + Number(sale.sgst) + Number(sale.igst), 0)
+  const creditPending = sales.filter((s) => s.payment_mode === 'credit' && !s.paid).reduce((s, sale) => s + Number(sale.total_amount), 0)
 
   return (
     <div className="space-y-6">
@@ -361,7 +374,7 @@ export default function Sales() {
         />
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-4">
         <div className="rounded-xl border-l-4 border-emerald-500 bg-emerald-50 p-4">
           <p className="text-sm text-emerald-700">Other Product Sales</p>
           <p className="mt-1 text-2xl font-bold text-slate-800">{formatCurrency(monthTotal)}</p>
@@ -373,6 +386,10 @@ export default function Sales() {
         <div className="rounded-xl border-l-4 border-amber-500 bg-amber-50 p-4">
           <p className="text-sm text-amber-700">GST Collected</p>
           <p className="mt-1 text-2xl font-bold text-slate-800">{formatCurrency(monthGst)}</p>
+        </div>
+        <div className="rounded-xl border-l-4 border-orange-500 bg-orange-50 p-4">
+          <p className="text-sm text-orange-700">Credit Pending</p>
+          <p className="mt-1 text-2xl font-bold text-slate-800">{formatCurrency(creditPending)}</p>
         </div>
       </div>
 
@@ -538,9 +555,19 @@ export default function Sales() {
                       <td className="py-3 pr-3">{sale.buyer_name}</td>
                       <td className="py-3 pr-3">{sale.product_name}</td>
                       <td className="py-3 pr-3">{Number(sale.quantity)} {sale.unit}</td>
-                      <td className="py-3 pr-3 font-medium text-green-700">{formatCurrency(sale.total_amount)}</td>
+                      <td className="py-3 pr-3">
+                        <p className="font-medium text-green-700">{formatCurrency(sale.total_amount)}</p>
+                        {sale.payment_mode === 'credit' && (
+                          <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${sale.paid ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                            Credit · {sale.paid ? 'Paid' : 'Unpaid'}
+                          </span>
+                        )}
+                      </td>
                       <td className="py-3">
                         <div className="flex flex-wrap gap-2">
+                          {sale.payment_mode === 'credit' && !sale.paid && (
+                            <button type="button" onClick={() => markSalePaid(sale)} className="text-xs font-medium text-green-600 hover:underline">Mark Paid</button>
+                          )}
                           <button type="button" onClick={() => editSale(sale)} className="text-xs text-blue-600 hover:underline">Edit</button>
                           <button type="button" onClick={() => viewSaleBill(sale)} className="text-xs text-green-600 hover:underline">Bill</button>
                           <button type="button" onClick={() => sendSaleBill(sale)} className="text-xs text-amber-600 hover:underline">WhatsApp</button>
