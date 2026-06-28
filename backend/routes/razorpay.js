@@ -28,7 +28,7 @@ router.post('/create-link', async (req, res) => {
         name: customerName,
         contact: `+91${phone}`
       },
-      notify: { sms: true, email: false },
+      notify: { sms: false, email: false },
       reminder_enable: true,
       callback_url: `${process.env.FRONTEND_URL}/payment-success`,
       callback_method: 'get'

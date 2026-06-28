@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__supabase__apply_migration",
+      "mcp__supabase__execute_sql",
+      "Bash(git checkout *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "supabase"
+  ]
+}
