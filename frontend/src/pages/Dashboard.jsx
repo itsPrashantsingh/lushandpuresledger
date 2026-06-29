@@ -73,7 +73,7 @@ export default function Dashboard() {
       supabase.from('product_sales').select('total_amount').gte('date', start).lte('date', end).eq('paid', true),
       supabase.from('bills').select('*, customers(*)').eq('paid', false),
       supabase.from('cattle_milk_entries').select('morning_litres, evening_litres, total_litres').gte('date', start).lte('date', end),
-      supabase.from('daily_entries').select('total_qty').gte('date', start).lte('date', end),
+      supabase.from('daily_entries').select('total_qty, amount').gte('date', start).lte('date', end),
       supabase.from('expenses').select('amount').gte('date', start).lte('date', end),
       supabase.from('payments').select('amount, paid_at'),
       supabase.from('product_sales').select('total_amount, date').eq('paid', true),
@@ -88,7 +88,7 @@ export default function Dashboard() {
       supabase.from('buttermilk_entries').select('amount, date')
     ])
 
-    const milkRevenue = (paymentsRes.data || []).reduce((s, p) => s + Number(p.amount), 0)
+    const milkRevenue = (deliveredRes.data || []).reduce((s, e) => s + Number(e.amount), 0)
     const productRevenue = (productSalesRes.data || []).reduce((s, p) => s + Number(p.total_amount), 0)
     const monthRevenue = milkRevenue + productRevenue
     const monthExpenses = (expensesRes.data || []).reduce((s, e) => s + Number(e.amount), 0)
@@ -154,7 +154,7 @@ export default function Dashboard() {
     const months = last6Months()
     const revData = months.map((m) => {
       const { start: ms, end: me } = getMonthBounds(m.key)
-      const milkRev = (allPaymentsRes.data || []).filter((p) => p.paid_at >= ms && p.paid_at <= me + 'T23:59:59').reduce((s, p) => s + Number(p.amount), 0)
+      const milkRev = (allMilkDeliveriesRes.data || []).filter((e) => e.date >= ms && e.date <= me).reduce((s, e) => s + Number(e.amount), 0)
       const productRev = (allProductSalesRes.data || []).filter((p) => p.date >= ms && p.date <= me).reduce((s, p) => s + Number(p.total_amount), 0)
       const exp = (allExpensesRes.data || []).filter((e) => e.date >= ms && e.date <= me).reduce((s, e) => s + Number(e.amount), 0)
       return { month: m.label, revenue: milkRev + productRev, milkRevenue: milkRev, productRevenue: productRev, expenses: exp }
@@ -257,17 +257,18 @@ export default function Dashboard() {
     const buttermilk = rawBmDeliveries.filter((e) => e.date >= revenueFrom && e.date <= revenueTo).reduce((s, e) => s + Number(e.amount), 0)
     const products = rawProductSalesAll.filter((e) => e.date >= revenueFrom && e.date <= revenueTo).reduce((s, e) => s + Number(e.total_amount), 0)
     const expenses = rawExpensesAll.filter((e) => e.date >= revenueFrom && e.date <= revenueTo).reduce((s, e) => s + Number(e.amount), 0)
-    const billPayments = rawPaymentsAll.filter((e) => e.paid_at >= revenueFrom && e.paid_at <= revenueTo + 'T23:59:59').reduce((s, e) => s + Number(e.amount), 0)
-    const cashCollected = billPayments + products
     const total = milk + buttermilk + products
-    // Outstanding = unpaid bill amounts for bills whose period falls in the selected range
+    // Attribute cash collected and outstanding by bill period, not payment date
     const periodBills = rawAllBills.filter((b) => b.period_start >= revenueFrom && b.period_start <= revenueTo)
-    const outstanding = periodBills.reduce((s, b) => {
+    let cashFromBills = 0, outstanding = 0
+    for (const b of periodBills) {
       const paid = rawAllPaidMap[b.id] || 0
-      return s + Math.max(0, Number(b.total_amount) - paid)
-    }, 0)
+      cashFromBills += Math.min(paid, Number(b.total_amount))
+      outstanding += Math.max(0, Number(b.total_amount) - paid)
+    }
+    const cashCollected = cashFromBills + products
     setRevenueBreakdown({ milk, buttermilk, products, total, expenses, netProfit: total - expenses, cashCollected, outstanding })
-  }, [revenueFrom, revenueTo, rawMilkDeliveries, rawBmDeliveries, rawProductSalesAll, rawExpensesAll, rawPaymentsAll, rawAllBills, rawAllPaidMap])
+  }, [revenueFrom, revenueTo, rawMilkDeliveries, rawBmDeliveries, rawProductSalesAll, rawExpensesAll, rawAllBills, rawAllPaidMap])
 
   // Recompute milk chart whenever cattle filter or raw data changes
   useEffect(() => {
@@ -374,7 +375,7 @@ export default function Dashboard() {
           <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
             <p className="text-xs font-medium text-blue-600">Cash Collected</p>
             <p className="mt-1 text-xl font-bold text-blue-800">{formatCurrency(revenueBreakdown.cashCollected)}</p>
-            <p className="mt-1 text-[10px] text-blue-400">Bill Payments + Product Sales</p>
+            <p className="mt-1 text-[10px] text-blue-400">Paid bills in period + Product Sales</p>
           </div>
           <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
             <p className="text-xs font-medium text-orange-600">Outstanding</p>
