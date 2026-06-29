@@ -52,6 +52,8 @@ export default function Dashboard() {
   const [recentPayments, setRecentPayments] = useState([])
   const [topPayers, setTopPayers] = useState([])
   const [overdueCustomers, setOverdueCustomers] = useState([])
+  const [rawAllBills, setRawAllBills] = useState([])
+  const [rawAllPaidMap, setRawAllPaidMap] = useState({})
   const [loading, setLoading] = useState(true)
 
   async function loadDashboard() {
@@ -166,25 +168,38 @@ export default function Dashboard() {
 
     // Payment intelligence — top payers & overdue
     const { data: allBills } = await supabase.from('bills').select('*, customers(name, whatsapp_no, customer_id)').gte('period_start', last6Months()[0].key + '-01')
+    let allBillsPaidMap = {}
     if (allBills?.length) {
       const billIds = allBills.map((b) => b.id)
       const pmap = await getPaidAmountsForBills(billIds)
+      allBillsPaidMap = pmap
 
       const customerMap = {}
       for (const b of allBills) {
         if (!b.customers) continue
         const cid = b.customer_id
-        if (!customerMap[cid]) customerMap[cid] = { name: b.customers.name, customer_id: b.customers.customer_id, onTime: 0, total: 0, outstanding: 0, overdueCount: 0, overdueDays: [] }
+        if (!customerMap[cid]) customerMap[cid] = { name: b.customers.name, customer_id: b.customers.customer_id, onTime: 0, late: 0, total: 0, outstanding: 0, overdueCount: 0, overdueDays: [] }
         const paid = pmap[b.id] || 0
         const due = Number(b.total_amount) - paid
+        const graceEnd = new Date(b.period_end + 'T00:00:00')
+        graceEnd.setDate(graceEnd.getDate() + 7)
         customerMap[cid].total++
         if (paid >= Number(b.total_amount)) {
-          customerMap[cid].onTime++
+          const paidAt = b.paid_at ? new Date(b.paid_at) : null
+          if (paidAt && paidAt <= graceEnd) {
+            customerMap[cid].onTime++
+          } else {
+            customerMap[cid].late++
+            if (paidAt) {
+              const daysLate = Math.max(0, Math.floor((paidAt - graceEnd) / 86400000))
+              customerMap[cid].overdueDays.push(daysLate)
+            }
+          }
         } else if (isOverdue(b)) {
           customerMap[cid].overdueCount++
           customerMap[cid].outstanding += due
-          const days = Math.floor((new Date() - new Date(b.period_end + 'T00:00:00')) / 86400000) - 7
-          customerMap[cid].overdueDays.push(Math.max(0, days))
+          const days = Math.max(0, Math.floor((new Date() - graceEnd) / 86400000))
+          customerMap[cid].overdueDays.push(days)
         }
       }
 
@@ -194,6 +209,8 @@ export default function Dashboard() {
       setTopPayers(top)
       setOverdueCustomers(overdue)
     }
+    setRawAllBills(allBills || [])
+    setRawAllPaidMap(allBillsPaidMap)
 
     setLoading(false)
   }
@@ -243,9 +260,14 @@ export default function Dashboard() {
     const billPayments = rawPaymentsAll.filter((e) => e.paid_at >= revenueFrom && e.paid_at <= revenueTo + 'T23:59:59').reduce((s, e) => s + Number(e.amount), 0)
     const cashCollected = billPayments + products
     const total = milk + buttermilk + products
-    const outstanding = Math.max(0, milk + buttermilk - billPayments)
+    // Outstanding = unpaid bill amounts for bills whose period falls in the selected range
+    const periodBills = rawAllBills.filter((b) => b.period_start >= revenueFrom && b.period_start <= revenueTo)
+    const outstanding = periodBills.reduce((s, b) => {
+      const paid = rawAllPaidMap[b.id] || 0
+      return s + Math.max(0, Number(b.total_amount) - paid)
+    }, 0)
     setRevenueBreakdown({ milk, buttermilk, products, total, expenses, netProfit: total - expenses, cashCollected, outstanding })
-  }, [revenueFrom, revenueTo, rawMilkDeliveries, rawBmDeliveries, rawProductSalesAll, rawExpensesAll, rawPaymentsAll])
+  }, [revenueFrom, revenueTo, rawMilkDeliveries, rawBmDeliveries, rawProductSalesAll, rawExpensesAll, rawPaymentsAll, rawAllBills, rawAllPaidMap])
 
   // Recompute milk chart whenever cattle filter or raw data changes
   useEffect(() => {
@@ -357,7 +379,7 @@ export default function Dashboard() {
           <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
             <p className="text-xs font-medium text-orange-600">Outstanding</p>
             <p className="mt-1 text-xl font-bold text-orange-800">{formatCurrency(revenueBreakdown.outstanding)}</p>
-            <p className="mt-1 text-[10px] text-orange-400">Milk + BM Delivered − Collected</p>
+            <p className="mt-1 text-[10px] text-orange-400">Unpaid bills in period</p>
           </div>
         </div>
 
@@ -537,7 +559,8 @@ export default function Dashboard() {
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-semibold text-green-700">{c.onTime}/{c.total} on time</p>
-                    <p className="text-xs text-slate-400">{Math.round((c.onTime / c.total) * 100)}% consistency</p>
+                    {c.late > 0 && <p className="text-xs text-amber-500">{c.late} paid late</p>}
+                    <p className="text-xs text-slate-400">{Math.round((c.onTime / c.total) * 100)}% on-time rate</p>
                   </div>
                 </div>
               ))}
