@@ -143,7 +143,7 @@ export async function getPaidAmountsForBills(billIds) {
   return map
 }
 
-export async function markCashPayment(bill, amount, customer) {
+export async function markCashPayment(bill, amount, customer, paidAt = null) {
   const numAmount = Number(amount)
   if (!numAmount || numAmount <= 0) throw new Error('Enter a valid amount')
 
@@ -154,12 +154,14 @@ export async function markCashPayment(bill, amount, customer) {
   const applied = Math.min(numAmount, balance)
   const newTotal = paidSoFar + applied
   const fullyPaid = newTotal >= Number(bill.total_amount)
+  const paymentTimestamp = paidAt ? new Date(paidAt).toISOString() : new Date().toISOString()
 
   const { error: payErr } = await supabase.from('payments').insert({
     bill_id: bill.id,
     customer_id: bill.customer_id,
     amount: applied,
-    mode: 'cash'
+    mode: 'cash',
+    paid_at: paymentTimestamp
   })
   if (payErr) throw payErr
 
@@ -168,7 +170,7 @@ export async function markCashPayment(bill, amount, customer) {
       .from('bills')
       .update({
         paid: true,
-        paid_at: new Date().toISOString(),
+        paid_at: paymentTimestamp,
         payment_mode: paidSoFar > 0 ? bill.payment_mode : 'cash'
       })
       .eq('id', bill.id)

@@ -29,6 +29,7 @@ export default function Bills() {
   const [loading, setLoading] = useState(true)
   const [cashModal, setCashModal] = useState(null)
   const [cashAmount, setCashAmount] = useState('')
+  const [cashPaidAt, setCashPaidAt] = useState('')
   const [savingCash, setSavingCash] = useState(false)
   const [running, setRunning] = useState('')
   const [progress, setProgress] = useState(null)
@@ -139,13 +140,14 @@ export default function Bills() {
   function openCashModal(bill) {
     setCashModal(bill)
     setCashAmount(String(Number(bill.total_amount) - (paidMap[bill.id] || 0)))
+    setCashPaidAt(bill.period_end)
   }
 
   async function confirmCashPayment() {
     if (!cashModal || !cashAmount || savingCash) return
     setSavingCash(true)
     try {
-      const { customer, applied } = await markCashPayment(cashModal, cashAmount, cashModal.customers)
+      const { customer, applied } = await markCashPayment(cashModal, cashAmount, cashModal.customers, cashPaidAt)
       window.open(whatsappLink(customer.whatsapp_no, buildCashReceivedMessage(customer, formatCurrency(applied))), '_blank')
       setCashModal(null)
       loadBills()
@@ -308,7 +310,10 @@ export default function Bills() {
           <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
             <h2 className="text-lg font-bold">Mark Cash Paid</h2>
             <p className="text-sm text-slate-500">{cashModal.customers?.name} · {cashModal.id}</p>
-            <input type="number" value={cashAmount} onChange={(e) => setCashAmount(e.target.value)} className="mt-4 w-full rounded-lg border px-3 py-2" />
+            <label className="mt-4 block text-xs text-slate-500">Amount</label>
+            <input type="number" value={cashAmount} onChange={(e) => setCashAmount(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" />
+            <label className="mt-3 block text-xs text-slate-500">Payment Date</label>
+            <input type="date" value={cashPaidAt} onChange={(e) => setCashPaidAt(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" />
             <div className="mt-4 flex gap-2">
               <button onClick={confirmCashPayment} disabled={savingCash} className="flex-1 rounded-lg bg-green-600 py-2 text-white disabled:opacity-50">{savingCash ? 'Saving…' : 'Confirm'}</button>
               <button onClick={() => setCashModal(null)} disabled={savingCash} className="flex-1 rounded-lg border py-2 disabled:opacity-50">Cancel</button>

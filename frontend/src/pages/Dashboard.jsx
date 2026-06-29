@@ -319,7 +319,7 @@ export default function Dashboard() {
     const amount = prompt(`Enter cash amount received (balance: ${formatCurrency(balance)}):`, balance)
     if (!amount) return
     try {
-      const { customer, applied } = await markCashPayment(bill, amount, bill.customers)
+      const { customer, applied } = await markCashPayment(bill, amount, bill.customers, bill.period_end)
       const msg = buildCashReceivedMessage(customer, formatCurrency(applied))
       window.open(whatsappLink(customer.whatsapp_no, msg), '_blank')
       loadDashboard()
