@@ -176,12 +176,12 @@ export default function Bills() {
       const billId = cashModal.id
       setCashModal(null)
       loadBills()
-      // Acknowledgement via API (falls back silently if provider not configured)
+      // API-only acknowledgement — always surface the result, never silently swallow it.
       try {
         const res = await sendTextViaApi('cash_received', billId, { amount: applied })
-        setToast({ message: res.ok ? 'Cash recorded · acknowledgement sent ✓' : 'Cash recorded (WhatsApp ack not sent)', type: 'success' })
-      } catch {
-        setToast({ message: 'Cash recorded', type: 'success' })
+        setToast({ message: res.ok ? 'Cash recorded · WhatsApp ack sent ✓' : `Cash recorded (ack failed: ${res.error || 'unknown error'})`, type: res.ok ? 'success' : 'error' })
+      } catch (err) {
+        setToast({ message: `Cash recorded (ack failed: ${err.response?.data?.error || err.message})`, type: 'error' })
       }
     } catch (err) {
       setToast({ message: err.message, type: 'error' })
@@ -206,20 +206,21 @@ export default function Bills() {
     setSyncingBillId('')
   }
 
+  // API-only — on failure, show an error toast and stop. Use "Manual" for the free wa.me fallback.
   async function handleReminder(bill) {
     try {
       const res = await sendTextViaApi('payment_reminder_t1', bill.id)
-      if (res.ok) {
-        setToast({ message: 'Reminder sent on WhatsApp ✓', type: 'success' })
-      } else {
-        // fall back to free wa.me manual send
-        const balance = formatCurrency(Number(bill.total_amount) - (paidMap[bill.id] || 0))
-        const msg = buildPaymentDueMessage(bill.customers, balance, bill.razorpay_short_url)
-        window.open(whatsappLink(bill.customers.whatsapp_no, msg), '_blank')
-      }
+      setToast({ message: res.ok ? 'Reminder sent on WhatsApp ✓' : `Reminder failed: ${res.error || 'unknown error'} — use Manual`, type: res.ok ? 'success' : 'error' })
     } catch (err) {
-      setToast({ message: err.response?.data?.error || err.message, type: 'error' })
+      setToast({ message: `Reminder failed: ${err.response?.data?.error || err.message} — use Manual`, type: 'error' })
     }
+  }
+
+  // Manual fallback — free wa.me deep link, always available, never automatic.
+  function handleReminderManual(bill) {
+    const balance = formatCurrency(Number(bill.total_amount) - (paidMap[bill.id] || 0))
+    const msg = buildPaymentDueMessage(bill.customers, balance, bill.razorpay_short_url)
+    window.open(whatsappLink(bill.customers.whatsapp_no, msg), '_blank')
   }
 
   async function handleViewPdf(bill) {
@@ -290,19 +291,27 @@ export default function Bills() {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Main 2-step workflow */}
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
           <button onClick={runGenerateAll} disabled={!!running} className="rounded-xl bg-green-600 px-4 py-3 text-sm font-bold text-white hover:bg-green-700 disabled:opacity-50">
             {running === 'generate' ? 'Working...' : '1️⃣ Generate All Bills + Razorpay'}
           </button>
-          <button onClick={runRazorpayAll} disabled={!!running} className="rounded-xl border-2 border-blue-400 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800 hover:bg-blue-100 disabled:opacity-50">
-            {running === 'razorpay' ? 'Working...' : '2️⃣ Add Razorpay Links'}
-          </button>
           <button onClick={runSendAllBills} disabled={!!running} className="rounded-xl border-2 border-amber-400 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900 hover:bg-amber-100 disabled:opacity-50">
-            {running === 'send' ? 'Sending...' : '3️⃣ Send All Bills (PDF + WhatsApp)'}
+            {running === 'send' ? 'Sending...' : '2️⃣ Send All Bills (PDF + WhatsApp)'}
           </button>
-          <button onClick={runSyncRazorpay} disabled={!!running} title="Check Razorpay for payments received this month and mark those bills paid" className="rounded-xl border-2 border-emerald-400 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-900 hover:bg-emerald-100 disabled:opacity-50">
-            {running === 'sync' ? 'Syncing...' : '🔄 Sync Razorpay Payments'}
-          </button>
+        </div>
+
+        {/* Razorpay repair/maintenance utilities — not part of the numbered flow above */}
+        <div className="mt-3 border-t border-green-100 pt-3">
+          <p className="mb-2 text-xs font-medium text-slate-500">Razorpay utilities — use only if needed</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button onClick={runRazorpayAll} disabled={!!running} title="Only creates links for bills that don't have one yet (e.g. step 1 failed for some customers)" className="rounded-xl border-2 border-blue-400 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800 hover:bg-blue-100 disabled:opacity-50">
+              {running === 'razorpay' ? 'Working...' : '🔁 Retry Missing Razorpay Links'}
+            </button>
+            <button onClick={runSyncRazorpay} disabled={!!running} title="Check Razorpay for payments received this month and mark those bills paid" className="rounded-xl border-2 border-emerald-400 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-900 hover:bg-emerald-100 disabled:opacity-50">
+              {running === 'sync' ? 'Syncing...' : '🔄 Sync Razorpay Payments'}
+            </button>
+          </div>
         </div>
 
         {progress && (
@@ -355,7 +364,7 @@ export default function Bills() {
         <div className="space-y-3">
           {filteredBills().map((bill) => (
             <div key={bill.id}>
-              <BillCard bill={bill} paidAmount={paidMap[bill.id] || 0} onMarkCashPaid={openCashModal} onSendReminder={handleReminder} onViewPdf={handleViewPdf} onSyncRazorpay={handleSyncRazorpay} syncing={syncingBillId === bill.id} />
+              <BillCard bill={bill} paidAmount={paidMap[bill.id] || 0} onMarkCashPaid={openCashModal} onSendReminder={handleReminder} onSendReminderManual={handleReminderManual} onViewPdf={handleViewPdf} onSyncRazorpay={handleSyncRazorpay} syncing={syncingBillId === bill.id} />
               <div className="mt-1 flex items-center gap-3">
                 <button onClick={() => handleSendBill(bill)} className="text-sm font-medium text-green-600 hover:underline">
                   📲 Send bill on WhatsApp

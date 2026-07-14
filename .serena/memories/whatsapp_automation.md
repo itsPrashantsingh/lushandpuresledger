@@ -111,6 +111,22 @@ too). Now fixed:
   reminder/ack, Reminders page, `WhatsAppSendQueue` "Auto-send all") — **every one of these keeps
   an explicit "Manual" wa.me fallback button alongside**, per the user's explicit instruction to
   never remove the free manual option.
+- **Strict rule enforced everywhere (2026-07-14 audit + fix):** an API-driven send button ONLY
+  calls the API; on failure it shows an error toast and stops — it must NEVER silently fall back
+  to wa.me or silently swallow the error. Manual is always a separate, explicitly-clicked button.
+  Found and fixed two violations of this: `Dashboard.jsx handleReminder` and `Bills.jsx
+  handleReminder` used to auto-open wa.me on API failure with no toast; `Dashboard.jsx
+  handleMarkPaid`'s cash-ack used to silently swallow send failures (`catch {}` with a comment).
+  Both now toast success/failure explicitly and have a separate `*Manual` handler + button
+  (`BillCard.jsx` gained an `onSendReminderManual` prop). Dashboard.jsx also gained a real
+  `Toast` import + `toast` state (it had none before — the original fix attempt would have
+  silently no-op'd via `setToast?.()` on an undefined function, which was itself caught and
+  corrected before shipping).
+- Bills page automation panel restructured: the numbered 1️⃣/2️⃣ workflow is now just
+  Generate→Send; "Add Razorpay Links" (renamed "🔁 Retry Missing Razorpay Links" — only touches
+  bills missing a link, via `.is('razorpay_short_url', null)`) and "🔄 Sync Razorpay Payments"
+  are demoted to a separate "Razorpay utilities — use only if needed" row, since they're
+  repair/retry actions, not sequential steps.
 - Bills page has a 4th automation button: "🔄 Sync Razorpay Payments" — scoped to the currently
   selected month via `reconcileRazorpayPayments(month)`.
 

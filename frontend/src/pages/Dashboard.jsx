@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { supabase } from '../lib/supabase'
 import StatCard from '../components/StatCard'
+import Toast from '../components/Toast'
 import {
   formatCurrency,
   formatDate,
@@ -75,6 +76,7 @@ export default function Dashboard() {
   const [rawAllBills, setRawAllBills] = useState([])
   const [rawAllPaidMap, setRawAllPaidMap] = useState({})
   const [loading, setLoading] = useState(true)
+  const [toast, setToast] = useState({ message: '', type: 'success' })
 
   async function loadDashboard() {
     setLoading(true)
@@ -329,23 +331,31 @@ export default function Dashboard() {
     try {
       const { applied } = await markCashPayment(bill, amount, bill.customers, bill.period_end)
       loadDashboard()
-      try { await sendTextViaApi('cash_received', bill.id, { amount: applied }) } catch { /* ack best-effort */ }
+      // API-only acknowledgement — always surface the result, never silently swallow it.
+      try {
+        const res = await sendTextViaApi('cash_received', bill.id, { amount: applied })
+        setToast({ message: res.ok ? 'Cash recorded · WhatsApp ack sent ✓' : `Cash recorded (ack failed: ${res.error || 'unknown error'})`, type: res.ok ? 'success' : 'error' })
+      } catch (err) {
+        setToast({ message: `Cash recorded (ack failed: ${err.response?.data?.error || err.message})`, type: 'error' })
+      }
     } catch (err) { alert(err.message) }
   }
 
+  // API-only — on failure, show an error toast and stop. Use "Manual" for the free wa.me fallback.
   async function handleReminder(bill) {
     try {
       const res = await sendTextViaApi('payment_reminder_t1', bill.id)
-      if (!res.ok) {
-        const balance = formatCurrency(Number(bill.total_amount) - (bill.paidAmount || 0))
-        const msg = buildPaymentDueMessage(bill.customers, balance, bill.razorpay_short_url)
-        window.open(whatsappLink(bill.customers.whatsapp_no, msg), '_blank')
-      }
-    } catch {
-      const balance = formatCurrency(Number(bill.total_amount) - (bill.paidAmount || 0))
-      const msg = buildPaymentDueMessage(bill.customers, balance, bill.razorpay_short_url)
-      window.open(whatsappLink(bill.customers.whatsapp_no, msg), '_blank')
+      setToast({ message: res.ok ? 'Reminder sent on WhatsApp ✓' : `Reminder failed: ${res.error || 'unknown error'} — use Manual`, type: res.ok ? 'success' : 'error' })
+    } catch (err) {
+      setToast({ message: `Reminder failed: ${err.response?.data?.error || err.message} — use Manual`, type: 'error' })
     }
+  }
+
+  // Manual fallback — free wa.me deep link, always available, never automatic.
+  function handleReminderManual(bill) {
+    const balance = formatCurrency(Number(bill.total_amount) - (bill.paidAmount || 0))
+    const msg = buildPaymentDueMessage(bill.customers, balance, bill.razorpay_short_url)
+    window.open(whatsappLink(bill.customers.whatsapp_no, msg), '_blank')
   }
 
   function monthRangeFrom(anchor, delta) {
@@ -366,6 +376,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
       <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
 
       {/* ── Revenue & Profit ──────────────────────────────────── */}
@@ -646,6 +657,7 @@ export default function Dashboard() {
                         <div className="flex gap-2">
                           <button onClick={() => handleMarkPaid(bill)} className="text-green-600 hover:underline">Mark Paid</button>
                           <button onClick={() => handleReminder(bill)} className="text-amber-600 hover:underline">Reminder</button>
+                          <button onClick={() => handleReminderManual(bill)} className="text-slate-400 hover:underline">Manual</button>
                         </div>
                       </td>
                     </tr>

@@ -5,6 +5,7 @@ export default function BillCard({
   paidAmount = 0,
   onMarkCashPaid,
   onSendReminder,
+  onSendReminderManual,
   onViewPdf,
   onSyncRazorpay,
   syncing = false
@@ -70,6 +71,14 @@ export default function BillCard({
           >
             Send Reminder
           </button>
+          {onSendReminderManual && (
+            <button
+              onClick={() => onSendReminderManual(bill)}
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-400 hover:bg-slate-50"
+            >
+              Manual
+            </button>
+          )}
           <button
             onClick={() => onViewPdf?.(bill)}
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
