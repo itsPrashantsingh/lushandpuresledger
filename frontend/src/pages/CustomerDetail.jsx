@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { createBill, getPaidAmountForBill, createRazorpayLink, billableEntries, entrySubtotal } from '../lib/bills'
 import { openBillPdf } from '../lib/pdf'
 import { shareBillOnWhatsApp } from '../lib/whatsapp'
+import { sendBillViaApi } from '../lib/whatsapp-api'
 import LoadingOverlay from '../components/LoadingOverlay'
 import {
   formatCurrency,
@@ -212,6 +213,22 @@ export default function CustomerDetail() {
       setActionMsg('Generate a bill first')
       return
     }
+    setActionMsg('Sending…')
+    try {
+      const res = await sendBillViaApi(customer, entries, currentBill)
+      if (res.ok) {
+        setActionMsg('Bill sent on WhatsApp with PDF ✓')
+      } else {
+        setActionMsg(res.error || 'Send failed — try Manual')
+      }
+    } catch (err) {
+      setActionMsg(err.response?.data?.error || err.message)
+    }
+  }
+
+  // wa.me fallback (free, manual attach)
+  async function handleSendWhatsAppManual() {
+    if (!currentBill) { setActionMsg('Generate a bill first'); return }
     try {
       const result = await shareBillOnWhatsApp(customer, entries, currentBill, currentBill.razorpay_short_url)
       if (result.success && !result.cancelled) {
@@ -353,6 +370,9 @@ export default function CustomerDetail() {
         </button>
         <button onClick={handleSendWhatsApp} className="rounded-lg border border-green-300 bg-green-50 px-4 py-2 text-sm font-medium text-green-700 hover:bg-green-100">
           Send on WhatsApp
+        </button>
+        <button onClick={handleSendWhatsAppManual} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">
+          Manual
         </button>
       </div>
 

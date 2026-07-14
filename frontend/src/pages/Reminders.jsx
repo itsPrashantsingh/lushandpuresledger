@@ -4,6 +4,7 @@ import Toast from '../components/Toast'
 import { formatCurrency, whatsappLink, isOverdue } from '../lib/utils'
 import { getPaidAmountsForBills } from '../lib/bills'
 import { buildReminderMessage } from '../lib/messages'
+import { sendTextViaApi } from '../lib/whatsapp-api'
 import { Link } from 'react-router-dom'
 
 export default function Reminders() {
@@ -43,7 +44,28 @@ export default function Reminders() {
     setLoading(false)
   }
 
-  function sendOne(item) {
+  // Primary: send one API reminder per pending bill (each month keeps its own pay link).
+  async function sendReminder(item) {
+    setSending(true)
+    let ok = 0
+    let fail = 0
+    for (const bill of item.bills) {
+      try {
+        const res = await sendTextViaApi('payment_reminder_t1', bill.id)
+        if (res.ok) ok++
+        else fail++
+      } catch {
+        fail++
+      }
+    }
+    setSending(false)
+    if (ok && !fail) setToast({ message: `Reminder sent to ${item.customer.name} (${ok} bill${ok > 1 ? 's' : ''}) ✓`, type: 'success' })
+    else if (ok) setToast({ message: `${item.customer.name}: ${ok} sent, ${fail} failed`, type: 'error' })
+    else setToast({ message: `${item.customer.name}: send failed — try Manual`, type: 'error' })
+  }
+
+  // Fallback: free wa.me, one message with the customer's total due.
+  function sendReminderManual(item) {
     const msg = buildReminderMessage(item.customer, item.totalDue, item.razorpayUrl)
     window.open(whatsappLink(item.customer.whatsapp_no, msg), '_blank')
     supabase.from('reminders').insert({ customer_id: item.customer.id, message: msg, sent_at: new Date().toISOString() })
@@ -52,17 +74,24 @@ export default function Reminders() {
   async function sendAllEligible() {
     if (!items.length) return
     setSending(true)
-
+    let ok = 0
+    let fail = 0
     for (let i = 0; i < items.length; i++) {
       const item = items[i]
       setProgress({ current: i + 1, total: items.length, name: item.customer.name })
-      sendOne(item)
-      if (i < items.length - 1) await new Promise((r) => setTimeout(r, 2000))
+      for (const bill of item.bills) {
+        try {
+          const res = await sendTextViaApi('payment_reminder_t1', bill.id)
+          if (res.ok) ok++
+          else fail++
+        } catch {
+          fail++
+        }
+      }
     }
-
     setSending(false)
     setProgress(null)
-    setToast({ message: `Opened WhatsApp for ${items.length} eligible customers`, type: 'success' })
+    setToast({ message: `Reminders sent via API — ${ok} ok${fail ? `, ${fail} failed` : ''}`, type: fail ? 'error' : 'success' })
   }
 
   return (
@@ -78,14 +107,15 @@ export default function Reminders() {
         </label>
         {items.length > 0 && (
           <button onClick={sendAllEligible} disabled={sending} className="mt-3 w-full rounded-xl bg-amber-500 py-3 font-bold text-white hover:bg-amber-600 disabled:opacity-50 sm:w-auto sm:px-8">
-            {sending ? `Sending ${progress?.current}/${progress?.total}...` : `📲 Send All Eligible (${items.length})`}
+            {sending ? `Sending ${progress?.current}/${progress?.total}...` : `📲 Send All via API (${items.length})`}
           </button>
         )}
-        {progress && <p className="mt-2 text-sm text-amber-800">Opening WhatsApp for {progress.name}...</p>}
+        {progress && <p className="mt-2 text-sm text-amber-800">Reminding {progress.name}...</p>}
       </div>
 
       <p className="text-sm text-slate-500">
-        Message text is set in <Link to="/settings" className="text-green-600 hover:underline">Settings → WhatsApp Messages</Link>
+        Reminder cadence & carry-forward are automated in <Link to="/whatsapp" className="text-green-600 hover:underline">WhatsApp Automation</Link>.
+        Manual message text is in <Link to="/settings" className="text-green-600 hover:underline">Settings → WhatsApp Messages</Link>.
       </p>
 
       {loading ? (
@@ -99,8 +129,12 @@ export default function Reminders() {
               <div>
                 <h3 className="font-semibold">{item.customer.name}</h3>
                 <p className="font-bold text-red-600">{formatCurrency(item.totalDue)} due</p>
+                <p className="text-xs text-slate-400">{item.bills.length} pending bill{item.bills.length > 1 ? 's' : ''}</p>
               </div>
-              <button onClick={() => sendOne(item)} className="rounded-lg bg-green-600 px-4 py-2 text-sm text-white">Send</button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => sendReminder(item)} disabled={sending} className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50">Send</button>
+                <button onClick={() => sendReminderManual(item)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Manual</button>
+              </div>
             </div>
           ))}
         </div>

@@ -39,6 +39,7 @@ app.use('/api/razorpay', (req, res, next) => {
 app.use('/api/razorpay', require('./routes/razorpay'))
 app.use('/api/daily-entry', require('./routes/daily-entry'))
 app.use('/api/logs', require('./routes/logs'))
+app.use('/api/whatsapp', require('./routes/whatsapp'))
 app.use('/webhook', require('./routes/webhook'))
 
 app.get('/health', (req, res) => res.json({ ok: true }))

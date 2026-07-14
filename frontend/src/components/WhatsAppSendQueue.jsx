@@ -1,18 +1,40 @@
 import { useState } from 'react'
 import { shareBillOnWhatsApp } from '../lib/whatsapp'
+import { sendBillViaApi } from '../lib/whatsapp-api'
 import { supabase } from '../lib/supabase'
 import { formatCurrency } from '../lib/utils'
 
 /**
- * Guided one-by-one WhatsApp send queue.
- * On mobile each step opens share sheet with PDF auto-attached.
+ * WhatsApp send queue. Two modes:
+ *  - Auto-send all via the API (no WhatsApp app, PDF attached server-side).
+ *  - Guided one-by-one wa.me fallback (free, manual attach).
  */
 export default function WhatsAppSendQueue({ packages, onClose, onComplete }) {
   const [index, setIndex] = useState(0)
   const [sent, setSent] = useState(0)
   const [skipped, setSkipped] = useState(0)
+  const [auto, setAuto] = useState({ running: false, done: 0, sent: 0, failed: 0 })
 
   if (!packages?.length) return null
+
+  async function autoSendAll() {
+    setAuto({ running: true, done: 0, sent: 0, failed: 0 })
+    let ok = 0
+    let fail = 0
+    for (let i = 0; i < packages.length; i++) {
+      const pkg = packages[i]
+      try {
+        const res = await sendBillViaApi(pkg.customer, pkg.entries, pkg.bill)
+        if (res.ok) ok++
+        else fail++
+      } catch {
+        fail++
+      }
+      setAuto({ running: true, done: i + 1, sent: ok, failed: fail })
+    }
+    onComplete?.({ sent: ok, skipped: fail, total: packages.length })
+    onClose()
+  }
 
   const current = packages[index]
   const isLast = index >= packages.length - 1
@@ -53,7 +75,24 @@ export default function WhatsAppSendQueue({ packages, onClose, onComplete }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 sm:items-center">
       <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-        <p className="text-xs font-medium text-slate-500">
+        {/* Auto-send all via API */}
+        <div className="mb-4 rounded-xl border-2 border-green-200 bg-green-50 p-3">
+          <p className="text-sm font-semibold text-green-900">⚡ Auto-send all {packages.length} bills</p>
+          <p className="mt-0.5 text-xs text-green-700">Via WhatsApp API — PDF attached, no app needed.</p>
+          {auto.running ? (
+            <p className="mt-2 text-sm font-medium text-slate-700">
+              Sending {auto.done}/{packages.length} · {auto.sent} sent · {auto.failed} failed…
+            </p>
+          ) : (
+            <button onClick={autoSendAll} className="mt-2 w-full rounded-lg bg-green-600 py-2.5 text-sm font-bold text-white hover:bg-green-700">
+              Auto-send all now
+            </button>
+          )}
+        </div>
+
+        <p className="text-center text-xs text-slate-400">— or send manually one by one —</p>
+
+        <p className="mt-3 text-xs font-medium text-slate-500">
           Send bill {index + 1} of {packages.length}
         </p>
         <h2 className="mt-1 text-xl font-bold text-slate-800">{current.customer?.name}</h2>

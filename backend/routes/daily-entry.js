@@ -37,10 +37,13 @@ function entryChangedFromDefault(entry, customer) {
 }
 
 async function loadCustomers() {
+  // All customers, active first — inactive ones are still listed (auto-skipped, sorted
+  // to the bottom by the frontend) so staff can quickly reactivate them without leaving
+  // the daily entry screen, instead of manually skipping them every single day.
   const { data, error } = await supabase
     .from('customers')
     .select('*')
-    .eq('active', true)
+    .order('active', { ascending: false })
     .order('name')
 
   if (error) throw error
@@ -67,14 +70,17 @@ async function loadDeliveryState(date) {
 
   const entries = customers.map((customer) => {
     const source = preferFinal ? finalByCustomer.get(customer.id) : draftByCustomer.get(customer.id) || finalByCustomer.get(customer.id)
+    // No draft/final yet: default to delivered for active customers, auto-skipped for
+    // inactive ones — no manual daily "Skip" click needed while a customer is paused.
+    const defaultDelivered = customer.active !== false
     const delivered = source
       ? source.delivered !== false && (Number(source.morning_qty) > 0 || Number(source.evening_qty) > 0)
-      : true
+      : defaultDelivered
 
     return {
       customer_id: customer.id,
-      morning_qty: source ? Number(source.morning_qty) : Number(customer.morning_qty),
-      evening_qty: source ? Number(source.evening_qty) : Number(customer.evening_qty),
+      morning_qty: source ? Number(source.morning_qty) : (defaultDelivered ? Number(customer.morning_qty) : 0),
+      evening_qty: source ? Number(source.evening_qty) : (defaultDelivered ? Number(customer.evening_qty) : 0),
       rate: source ? Number(source.rate) : Number(customer.rate),
       delivered,
       saved: finalByCustomer.has(customer.id),
@@ -112,8 +118,11 @@ async function seedDraftsIfNeeded(date, user) {
 
   const rows = customers.map((customer) => {
     const final = finalByCustomer.get(customer.id)
-    const morning = final ? Number(final.morning_qty) : Number(customer.morning_qty)
-    const evening = final ? Number(final.evening_qty) : Number(customer.evening_qty)
+    // Inactive customers with no existing final entry seed as skipped (0/0) — a paused
+    // customer should never be auto-delivered just because unlock ran for a new day.
+    const useDefault = Boolean(final) || customer.active !== false
+    const morning = final ? Number(final.morning_qty) : (useDefault ? Number(customer.morning_qty) : 0)
+    const evening = final ? Number(final.evening_qty) : (useDefault ? Number(customer.evening_qty) : 0)
     return {
       customer_id: customer.id,
       date,

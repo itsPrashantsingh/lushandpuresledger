@@ -18,6 +18,7 @@ import Inventory from './pages/Inventory'
 import Reminders from './pages/Reminders'
 import ImportExport from './pages/ImportExport'
 import ActivityLogs from './pages/ActivityLogs'
+import WhatsAppAutomation from './pages/WhatsAppAutomation'
 import Settings from './pages/Settings'
 import PaymentSuccess from './pages/PaymentSuccess'
 
@@ -59,6 +60,7 @@ export default function App() {
                     <Route path="/inventory" element={<Inventory />} />
                     <Route path="/reminders" element={<Reminders />} />
                     <Route path="/import-export" element={<ImportExport />} />
+                    <Route path="/whatsapp" element={<WhatsAppAutomation />} />
                     <Route path="/logs" element={<ActivityLogs />} />
                     <Route path="/settings" element={<Settings />} />
                   </Routes>

@@ -14,6 +14,7 @@ const links = [
   { to: '/expenses', label: 'Expenses', icon: '💸' },
   { to: '/inventory', label: 'Inventory', icon: '📦' },
   { to: '/reminders', label: 'Reminders', icon: '🔔' },
+  { to: '/whatsapp', label: 'WhatsApp', icon: '💬' },
   { to: '/logs', label: 'Logs', icon: '🕒' },
   { to: '/settings', label: 'Settings', icon: '⚙️' }
 ]

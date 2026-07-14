@@ -141,6 +141,7 @@ export default function CattleDetail() {
                   <th className="px-4 py-2">Morning</th>
                   <th className="px-4 py-2">Evening</th>
                   <th className="px-4 py-2">Total</th>
+                  <th className="px-4 py-2">Saved by</th>
                 </tr>
               </thead>
               <tbody>
@@ -150,6 +151,10 @@ export default function CattleDetail() {
                     <td className="px-4 py-2">{formatQty(e.morning_litres)} L</td>
                     <td className="px-4 py-2">{formatQty(e.evening_litres)} L</td>
                     <td className="px-4 py-2 font-medium">{formatQty(e.total_litres)} L</td>
+                    <td className="px-4 py-2 text-xs text-slate-400">
+                      {e.updated_by_email || '—'}
+                      {e.updated_at && <span className="block">{new Date(e.updated_at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>

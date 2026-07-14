@@ -87,13 +87,18 @@ async function syncBillFromRazorpay(billId) {
   }
 }
 
-/** Sync all unpaid bills that have a Razorpay link */
-async function reconcileUnpaidBills() {
-  const { data: bills } = await supabase
+/** Sync all unpaid bills that have a Razorpay link. Optionally scoped to a billing period. */
+async function reconcileUnpaidBills({ periodStart, periodEnd } = {}) {
+  let query = supabase
     .from('bills')
     .select('id')
     .eq('paid', false)
     .not('razorpay_link_id', 'is', null)
+
+  if (periodStart) query = query.gte('period_start', periodStart)
+  if (periodEnd) query = query.lte('period_end', periodEnd)
+
+  const { data: bills } = await query
 
   const synced = []
   const errors = []

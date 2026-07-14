@@ -23,3 +23,89 @@ services:
         sync: false
       - key: API_KEY
         sync: false
+      - key: CRON_SECRET
+        sync: false
+      - key: WHATSAPP_PROVIDER
+        sync: false
+      - key: PAYPERWA_API_KEY
+        sync: false
+      - key: PAYPERWA_BASE_URL
+        sync: false
+      - key: PAYPERWA_CHANNEL_ID
+        sync: false
+      - key: PAYPERWA_WEBHOOK_SECRET
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_SECURE
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: DAIRY_NAME
+        sync: false
+      - key: DAIRY_ADDRESS
+        sync: false
+      - key: DAIRY_PHONE
+        sync: false
+      - key: DAIRY_GSTIN
+        sync: false
+      - key: DAIRY_STATE
+        sync: false
+
+  # Daily automation tick (bill generation / send / reminders / email report)
+  - type: cron
+    name: dairy-whatsapp-cron
+    runtime: node
+    rootDir: backend
+    schedule: "30 3 * * *"  # 09:00 IST daily (03:30 UTC)
+    buildCommand: npm install
+    startCommand: node scripts/cron.js
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: WHATSAPP_PROVIDER
+        sync: false
+      - key: PAYPERWA_API_KEY
+        sync: false
+      - key: PAYPERWA_BASE_URL
+        sync: false
+      - key: PAYPERWA_CHANNEL_ID
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_SECURE
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: DAIRY_NAME
+        sync: false
+      - key: DAIRY_ADDRESS
+        sync: false
+      - key: DAIRY_PHONE
+        sync: false
+      - key: DAIRY_GSTIN
+        sync: false
+      - key: DAIRY_STATE
+        sync: false

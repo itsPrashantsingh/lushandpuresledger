@@ -50,6 +50,23 @@ async function markBillPaidFromRazorpay({ billId, paymentId, amountPaid, mode = 
     razorpay_payment_id: paymentId || null
   })
 
+  // Auto acknowledgement over WhatsApp (best-effort; never blocks payment)
+  try {
+    const { data: config } = await supabase.from('automation_config').select('razorpay_ack_enabled').eq('id', 1).single()
+    if (config?.razorpay_ack_enabled && bill.customers?.whatsapp_no) {
+      const { sendMessage } = require('./whatsapp/send')
+      await sendMessage('razorpay_received', {
+        to: bill.customers.whatsapp_no,
+        customerId: bill.customer_id,
+        entityId: billId,
+        name: bill.customers.name,
+        amount: paidAmount
+      })
+    }
+  } catch (err) {
+    console.error('razorpay ack failed:', err.message)
+  }
+
   return { ok: true, bill, billId }
 }
 

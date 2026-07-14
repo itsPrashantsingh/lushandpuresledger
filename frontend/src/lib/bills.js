@@ -106,9 +106,10 @@ export async function confirmRazorpayPayment(payload) {
 }
 
 /** Check all unpaid Razorpay bills against Razorpay API */
-export async function reconcileRazorpayPayments() {
+/** Sync Razorpay payment status for unpaid bills. Pass a 'YYYY-MM' month to scope it. */
+export async function reconcileRazorpayPayments(month) {
   const headers = API_KEY ? { 'x-api-key': API_KEY } : {}
-  const res = await axios.post(`${BACKEND_URL}/api/razorpay/reconcile`, {}, { headers })
+  const res = await axios.post(`${BACKEND_URL}/api/razorpay/reconcile`, month ? { month } : {}, { headers })
   return res.data
 }
 
@@ -183,8 +184,11 @@ export async function markCashPayment(bill, amount, customer, paidAt = null) {
 export async function generateAllMonthlyBills(month, { withRazorpay = true, onProgress } = {}) {
   const { start, end } = getMonthBounds(month)
 
+  // Not filtered by active — a customer paused mid-month must still be billed for the
+  // days they were active. Eligibility is decided purely by whether they have billable
+  // entries in this period (see the hasMilk/hasButtermilk check below).
   const [{ data: customers }, { data: existingBills }, { data: allEntries }, { data: allButtermilk }] = await Promise.all([
-    supabase.from('customers').select('*').eq('active', true).order('name'),
+    supabase.from('customers').select('*').order('name'),
     supabase.from('bills').select('customer_id').gte('period_start', start).lte('period_end', end),
     supabase.from('daily_entries').select('*').gte('date', start).lte('date', end).order('date'),
     supabase.from('buttermilk_entries').select('customer_id, quantity, rate, amount').gte('date', start).lte('date', end)

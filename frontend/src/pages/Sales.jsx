@@ -4,6 +4,7 @@ import Toast from '../components/Toast'
 import { formatCurrency, formatDate, todayISO, currentYearMonth, getMonthBounds } from '../lib/utils'
 import { openProductSaleBillPdf } from '../lib/pdf'
 import { shareProductSaleOnWhatsApp } from '../lib/whatsapp'
+import { sendSaleViaApi } from '../lib/whatsapp-api'
 
 const EMPTY_PRODUCT = {
   category: '',
@@ -251,34 +252,12 @@ export default function Sales() {
     }
 
     const savedSale = savedRows?.[0] || row
+    const wasEditing = Boolean(editingSale)
     setSaleForm({ ...EMPTY_SALE, date: saleForm.date })
     setEditingSale(null)
     setSavingSale(false)
-    if (editingSale) {
-      openProductSaleBillPdf(savedSale)
-      setToast({ message: `Sale updated: ${savedSale.invoice_no}`, type: 'success' })
-      loadProducts()
-      loadSales()
-      return
-    }
-
-    if (savedSale.buyer_phone) {
-      try {
-        const result = await shareProductSaleOnWhatsApp(savedSale)
-        if (result.success && !result.cancelled) {
-          await supabase.from('product_sales').update({ sent_at: new Date().toISOString() }).eq('id', savedSale.id)
-          setToast({ message: result.attached ? 'Sale saved and bill sent with PDF' : 'Sale saved. PDF downloaded — attach it in WhatsApp', type: 'success' })
-        } else {
-          setToast({ message: `Sale saved: ${savedSale.invoice_no}`, type: 'success' })
-        }
-      } catch (err) {
-        openProductSaleBillPdf(savedSale)
-        setToast({ message: `Sale saved, but WhatsApp failed: ${err.message}`, type: 'error' })
-      }
-    } else {
-      openProductSaleBillPdf(savedSale)
-      setToast({ message: `Sale saved: ${savedSale.invoice_no}`, type: 'success' })
-    }
+    // Save only — sending the bill on WhatsApp is a separate, explicit action.
+    setToast({ message: wasEditing ? `Sale updated: ${savedSale.invoice_no}` : `Sale saved: ${savedSale.invoice_no}`, type: 'success' })
     loadProducts()
     loadSales()
   }
@@ -288,6 +267,26 @@ export default function Sales() {
   }
 
   async function sendSaleBill(sale) {
+    if (!sale.buyer_phone) {
+      setToast({ message: 'No buyer phone on this sale', type: 'error' })
+      return
+    }
+    setToast({ message: `Sending ${sale.invoice_no}…`, type: 'success' })
+    try {
+      const res = await sendSaleViaApi(sale)
+      if (res.ok) {
+        setToast({ message: 'Bill sent on WhatsApp ✓', type: 'success' })
+        loadSales()
+      } else {
+        setToast({ message: res.error || 'WhatsApp send failed', type: 'error' })
+      }
+    } catch (err) {
+      setToast({ message: err.response?.data?.error || err.message, type: 'error' })
+    }
+  }
+
+  // wa.me fallback (free, manual attach) if the API isn't set up / wallet empty
+  async function sendSaleManual(sale) {
     try {
       const result = await shareProductSaleOnWhatsApp(sale)
       if (result.success && !result.cancelled) {
@@ -451,7 +450,7 @@ export default function Sales() {
         </div>
 
         <button type="submit" disabled={savingSale || activeProducts.length === 0} className="mt-3 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50">
-          {savingSale ? 'Saving...' : editingSale ? 'Update Sale' : 'Save Sale & Send WhatsApp'}
+          {savingSale ? 'Saving...' : editingSale ? 'Update Sale' : 'Save Sale'}
         </button>
       </form>
 
@@ -580,7 +579,8 @@ export default function Sales() {
                           )}
                           <button type="button" onClick={() => editSale(sale)} className="text-xs text-blue-600 hover:underline">Edit</button>
                           <button type="button" onClick={() => viewSaleBill(sale)} className="text-xs text-green-600 hover:underline">Bill</button>
-                          <button type="button" onClick={() => sendSaleBill(sale)} className="text-xs text-amber-600 hover:underline">WhatsApp</button>
+                          <button type="button" onClick={() => sendSaleBill(sale)} className="text-xs font-medium text-amber-600 hover:underline">Send Bill</button>
+                          <button type="button" onClick={() => sendSaleManual(sale)} className="text-xs text-slate-400 hover:underline">Manual</button>
                           <button type="button" onClick={() => deleteSale(sale)} className="text-xs text-red-600 hover:underline">Delete</button>
                         </div>
                         {sale.sent_at && <p className="mt-1 text-[10px] text-slate-400">sent {formatDate(sale.sent_at.slice(0, 10))}</p>}

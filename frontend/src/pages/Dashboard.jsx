@@ -15,7 +15,26 @@ import {
   todayISO
 } from '../lib/utils'
 import { getPaidAmountsForBills, markCashPayment, reconcileRazorpayPayments, wakeBackend } from '../lib/bills'
-import { buildPaymentDueMessage, buildCashReceivedMessage } from '../lib/messages'
+import { buildPaymentDueMessage } from '../lib/messages'
+import { sendTextViaApi } from '../lib/whatsapp-api'
+
+function monthLabelOf(fromDate) {
+  if (!fromDate) return 'All time'
+  const [y, m] = fromDate.split('-').map(Number)
+  return new Date(y, m - 1, 1).toLocaleDateString('en-IN', { month: 'short', year: '2-digit' })
+}
+
+function RangeShifter({ from, onShift, onThisMonth, onAllTime }) {
+  return (
+    <div className="flex items-center gap-1 text-xs font-medium">
+      <button onClick={() => onShift(-1)} className="rounded border border-slate-300 px-2 py-1 text-slate-600 hover:bg-slate-50">◀</button>
+      <span className="min-w-[64px] text-center text-slate-700">{monthLabelOf(from)}</span>
+      <button onClick={() => onShift(1)} className="rounded border border-slate-300 px-2 py-1 text-slate-600 hover:bg-slate-50">▶</button>
+      <button onClick={onThisMonth} className="rounded border border-slate-300 px-2 py-1 text-slate-600 hover:bg-slate-50">This month</button>
+      {onAllTime && <button onClick={onAllTime} className="rounded border border-slate-300 px-2 py-1 text-slate-600 hover:bg-slate-50">All time</button>}
+    </div>
+  )
+}
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
@@ -40,7 +59,8 @@ export default function Dashboard() {
   const [supplyVsProduction, setSupplyVsProduction] = useState({
     produced: 0, supplied: 0, surplus: 0, utilization: 0
   })
-  const [svpRange, setSvpRange] = useState('alltime')
+  const [svpFrom, setSvpFrom] = useState(() => getMonthBounds(currentYearMonth()).start)
+  const [svpTo, setSvpTo] = useState(() => getMonthBounds(currentYearMonth()).end)
   const [rawCattleEntries, setRawCattleEntries] = useState([])
   const [rawDailyEntries, setRawDailyEntries] = useState([])
   const [cattle, setCattle] = useState([])
@@ -125,7 +145,7 @@ export default function Dashboard() {
       collectionEfficiency, productionEfficiency
     })
 
-    // Store raw SVP data — recomputed in useEffect when svpRange changes
+    // Store raw SVP data — recomputed in useEffect when the SVP date range changes
     setRawCattleEntries(allCattleEntriesRes.data || [])
     setRawDailyEntries(allDeliveredRes.data || [])
 
@@ -289,21 +309,9 @@ export default function Dashboard() {
   // Recompute supply vs production whenever range or raw data changes
   useEffect(() => {
     if (!rawCattleEntries.length && !rawDailyEntries.length) return
-    const ym = currentYearMonth()
-    const { start, end } = getMonthBounds(ym)
-    const sixMonthsStart = last6Months()[0].key + '-01'
-
-    const cattle = svpRange === 'month'
-      ? rawCattleEntries.filter((e) => e.date >= start && e.date <= end)
-      : svpRange === '6months'
-        ? rawCattleEntries.filter((e) => e.date >= sixMonthsStart)
-        : rawCattleEntries
-
-    const delivered = svpRange === 'month'
-      ? rawDailyEntries.filter((e) => e.date >= start && e.date <= end)
-      : svpRange === '6months'
-        ? rawDailyEntries.filter((e) => e.date >= sixMonthsStart)
-        : rawDailyEntries
+    const inRange = (e) => (!svpFrom || e.date >= svpFrom) && (!svpTo || e.date <= svpTo)
+    const cattle = rawCattleEntries.filter(inRange)
+    const delivered = rawDailyEntries.filter(inRange)
 
     const produced = cattle.reduce((s, e) => s + Number(e.total_litres), 0)
     const supplied = delivered.reduce((s, e) => s + Number(e.total_qty), 0)
@@ -312,25 +320,45 @@ export default function Dashboard() {
       produced, supplied, surplus,
       utilization: produced > 0 ? Math.round((supplied / produced) * 100) : 0
     })
-  }, [svpRange, rawCattleEntries, rawDailyEntries])
+  }, [svpFrom, svpTo, rawCattleEntries, rawDailyEntries])
 
   async function handleMarkPaid(bill) {
     const balance = Number(bill.total_amount) - bill.paidAmount
     const amount = prompt(`Enter cash amount received (balance: ${formatCurrency(balance)}):`, balance)
     if (!amount) return
     try {
-      const { customer, applied } = await markCashPayment(bill, amount, bill.customers, bill.period_end)
-      const msg = buildCashReceivedMessage(customer, formatCurrency(applied))
-      window.open(whatsappLink(customer.whatsapp_no, msg), '_blank')
+      const { applied } = await markCashPayment(bill, amount, bill.customers, bill.period_end)
       loadDashboard()
+      try { await sendTextViaApi('cash_received', bill.id, { amount: applied }) } catch { /* ack best-effort */ }
     } catch (err) { alert(err.message) }
   }
 
-  function handleReminder(bill) {
-    const balance = formatCurrency(Number(bill.total_amount) - (bill.paidAmount || 0))
-    const msg = buildPaymentDueMessage(bill.customers, balance, bill.razorpay_short_url)
-    window.open(whatsappLink(bill.customers.whatsapp_no, msg), '_blank')
+  async function handleReminder(bill) {
+    try {
+      const res = await sendTextViaApi('payment_reminder_t1', bill.id)
+      if (!res.ok) {
+        const balance = formatCurrency(Number(bill.total_amount) - (bill.paidAmount || 0))
+        const msg = buildPaymentDueMessage(bill.customers, balance, bill.razorpay_short_url)
+        window.open(whatsappLink(bill.customers.whatsapp_no, msg), '_blank')
+      }
+    } catch {
+      const balance = formatCurrency(Number(bill.total_amount) - (bill.paidAmount || 0))
+      const msg = buildPaymentDueMessage(bill.customers, balance, bill.razorpay_short_url)
+      window.open(whatsappLink(bill.customers.whatsapp_no, msg), '_blank')
+    }
   }
+
+  function monthRangeFrom(anchor, delta) {
+    const base = (anchor || todayISO()).slice(0, 7)
+    const [y, m] = base.split('-').map(Number)
+    const d = new Date(y, m - 1 + delta, 1)
+    return getMonthBounds(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+  function shiftRevenue(delta) { const { start, end } = monthRangeFrom(revenueFrom, delta); setRevenueFrom(start); setRevenueTo(end) }
+  function revenueThisMonth() { const { start, end } = getMonthBounds(currentYearMonth()); setRevenueFrom(start); setRevenueTo(end) }
+  function shiftSvp(delta) { const { start, end } = monthRangeFrom(svpFrom || `${currentYearMonth()}-01`, delta); setSvpFrom(start); setSvpTo(end) }
+  function svpThisMonth() { const { start, end } = getMonthBounds(currentYearMonth()); setSvpFrom(start); setSvpTo(end) }
+  function svpAllTime() { setSvpFrom(''); setSvpTo('') }
 
   if (loading) return <div className="py-12 text-center text-slate-500">Loading dashboard...</div>
 
@@ -344,20 +372,23 @@ export default function Dashboard() {
       <section>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Revenue & Profit</h2>
-          <div className="flex items-center gap-2 text-sm">
-            <input
-              type="date"
-              value={revenueFrom}
-              onChange={(e) => setRevenueFrom(e.target.value)}
-              className="rounded-lg border border-slate-300 px-2 py-1 text-slate-700"
-            />
-            <span className="text-slate-400">to</span>
-            <input
-              type="date"
-              value={revenueTo}
-              onChange={(e) => setRevenueTo(e.target.value)}
-              className="rounded-lg border border-slate-300 px-2 py-1 text-slate-700"
-            />
+          <div className="flex flex-col items-end gap-2">
+            <RangeShifter from={revenueFrom} onShift={shiftRevenue} onThisMonth={revenueThisMonth} />
+            <div className="flex items-center gap-2 text-sm">
+              <input
+                type="date"
+                value={revenueFrom}
+                onChange={(e) => setRevenueFrom(e.target.value)}
+                className="rounded-lg border border-slate-300 px-2 py-1 text-slate-700"
+              />
+              <span className="text-slate-400">to</span>
+              <input
+                type="date"
+                value={revenueTo}
+                onChange={(e) => setRevenueTo(e.target.value)}
+                className="rounded-lg border border-slate-300 px-2 py-1 text-slate-700"
+              />
+            </div>
           </div>
         </div>
         {/* Row 1 — key KPIs */}
@@ -464,17 +495,7 @@ export default function Dashboard() {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
             Supply vs Production
           </h2>
-          <div className="flex rounded-lg border border-slate-200 bg-white overflow-hidden text-xs font-medium">
-            {[['month', 'This Month'], ['6months', '6 Months'], ['alltime', 'All Time']].map(([val, label]) => (
-              <button
-                key={val}
-                onClick={() => setSvpRange(val)}
-                className={`px-3 py-1.5 transition-colors ${svpRange === val ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <RangeShifter from={svpFrom} onShift={shiftSvp} onThisMonth={svpThisMonth} onAllTime={svpAllTime} />
         </div>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">

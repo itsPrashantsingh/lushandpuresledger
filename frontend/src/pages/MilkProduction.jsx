@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { todayISO, formatQty } from '../lib/utils'
+import { useAuth } from '../lib/auth'
 import Toast from '../components/Toast'
 import QtyControl from '../components/QtyControl'
 
 export default function MilkProduction() {
+  const { user } = useAuth()
   const [date, setDate] = useState(todayISO())
   const [cattle, setCattle] = useState([])
   const [entries, setEntries] = useState({})
   const [search, setSearch] = useState('')
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
+  const [savedInfo, setSavedInfo] = useState(null)
   const [toast, setToast] = useState({ message: '', type: 'success' })
 
   useEffect(() => { loadData() }, [date])
@@ -31,6 +34,14 @@ export default function MilkProduction() {
         saved: !!ex
       }
     })
+
+    const stamped = (existing || []).filter((e) => e.updated_at)
+    if (stamped.length) {
+      const latest = stamped.reduce((a, b) => (new Date(a.updated_at) > new Date(b.updated_at) ? a : b))
+      setSavedInfo({ at: latest.updated_at, by: latest.updated_by_email })
+    } else {
+      setSavedInfo(null)
+    }
 
     setCattle(list || [])
     setEntries(entryMap)
@@ -74,7 +85,9 @@ export default function MilkProduction() {
           cattle_id: c.id,
           date,
           morning_litres: morning,
-          evening_litres: evening
+          evening_litres: evening,
+          updated_by_email: user?.email || null,
+          updated_at: new Date().toISOString()
         }
       })
       .filter(Boolean)
@@ -169,6 +182,13 @@ export default function MilkProduction() {
           <div className="mb-3 rounded-lg bg-blue-600 px-3 py-2 text-center text-sm font-medium text-white">
             {summary.total.toFixed(1)} L total · ☀️ {summary.morning.toFixed(1)} · 🌙 {summary.evening.toFixed(1)}
           </div>
+
+          {savedInfo && (
+            <p className="mb-3 text-center text-xs text-slate-400">
+              Last saved {new Date(savedInfo.at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+              {savedInfo.by ? ` by ${savedInfo.by}` : ''}
+            </p>
+          )}
 
           <div className="space-y-2">
             {filtered.map((c) => {

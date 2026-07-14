@@ -41,7 +41,7 @@ export default function DailyEntry() {
       const { data } = await apiGet(`/api/daily-entry?date=${date}`)
       applyServerState(data)
 
-      const subscribedIds = (data.customers || []).filter((c) => c.buttermilk_required).map((c) => c.id)
+      const subscribedIds = (data.customers || []).filter((c) => c.buttermilk_required && c.active !== false).map((c) => c.id)
       if (subscribedIds.length) {
         const { data: bmData } = await supabase
           .from('buttermilk_entries')
@@ -128,6 +128,31 @@ export default function DailyEntry() {
     }
   }
 
+  async function setCustomerActive(customerId, active) {
+    const { error } = await supabase.from('customers').update({ active }).eq('id', customerId)
+    if (error) {
+      setToast({ message: error.message, type: 'error' })
+      return
+    }
+
+    if (!active) {
+      // Pausing: patch the customer + zero today's entry LOCALLY instead of
+      // reloading from the server. If today's date was already unlocked (draft
+      // has real quantities), a reload would show those stale values again —
+      // this makes the pause take effect on the currently-viewed day immediately,
+      // so the very next Lock/Save Final correctly excludes it from billing.
+      setCustomers((prev) => prev.map((c) => (c.id === customerId ? { ...c, active: false } : c)))
+      setEntries((prev) => ({ ...prev, [customerId]: { ...prev[customerId], delivered: false, morning_qty: 0, evening_qty: 0 } }))
+      markDirty()
+      setToast({ message: 'Customer paused — today\'s entry cleared, auto-skipped daily. Click Lock/Save Final to persist.', type: 'success' })
+    } else {
+      // Reactivating: safe to reload — no unsaved edits to protect, and this
+      // gets the customer's normal default qty back for the current date.
+      setToast({ message: 'Customer activated', type: 'success' })
+      loadData()
+    }
+  }
+
   async function unlockEntries() {
     setSaving(true)
     try {
@@ -172,6 +197,8 @@ export default function DailyEntry() {
   }
 
   const filtered = customers.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
+  const activeList = filtered.filter((c) => c.active !== false)
+  const inactiveList = filtered.filter((c) => c.active === false)
   const isLocked = session.status !== 'unlocked'
   const isFinalized = session.status === 'finalized'
   const statusText = isFinalized ? 'Final saved' : isLocked ? 'Locked' : 'Unlocked'
@@ -186,7 +213,7 @@ export default function DailyEntry() {
     if (!e?.delivered) return s
     return s + (Number(e.morning_qty) + Number(e.evening_qty)) * Number(e.rate)
   }, 0)
-  const buttermilkSubscribers = customers.filter((c) => c.buttermilk_required).length
+  const buttermilkSubscribers = customers.filter((c) => c.buttermilk_required && c.active !== false).length
   const customCount = customers.reduce((sum, customer) => {
     const e = entries[customer.id]
     if (!e) return sum
@@ -212,6 +239,19 @@ export default function DailyEntry() {
         </div>
       </div>
 
+      {isFinalized && session.finalized_at && (
+        <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+          🔒 Final saved on {new Date(session.finalized_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+          {session.finalized_by_email ? ` by ${session.finalized_by_email}` : ''} — locked. Tap <strong>Unlock</strong> to edit.
+        </div>
+      )}
+      {session.status === 'locked' && session.locked_at && !isFinalized && (
+        <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          Locked on {new Date(session.locked_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+          {session.locked_by_email ? ` by ${session.locked_by_email}` : ''}
+        </div>
+      )}
+
       <input
         type="search"
         placeholder="Search customer..."
@@ -221,14 +261,14 @@ export default function DailyEntry() {
       />
 
       <div className="mb-3 rounded-lg bg-green-600 px-3 py-2 text-center text-sm font-medium text-white">
-        {totalDelivered.toFixed(1)} L planned · {formatCurrency(totalAmount)} · {customCount} custom · {filtered.length} customers
+        {totalDelivered.toFixed(1)} L planned · {formatCurrency(totalAmount)} · {customCount} custom · {activeList.length} customers
         {buttermilkSubscribers > 0 && ` · ${buttermilkSubscribers} buttermilk`}
       </div>
 
       {loading && <p className="rounded-lg border border-slate-200 bg-white p-4 text-center text-sm text-slate-500">Loading deliveries...</p>}
 
       <div className="space-y-2">
-        {!loading && filtered.map((c) => {
+        {!loading && activeList.map((c) => {
           const e = entries[c.id] || {}
           const rowCustom = e.delivered === false ||
             Number(e.morning_qty) !== Number(c.morning_qty) ||
@@ -246,13 +286,23 @@ export default function DailyEntry() {
                     {c.buttermilk_required && <span className="text-purple-600">+buttermilk</span>}
                   </div>
                 </div>
-                <button
-                  onClick={() => toggleSkip(c.id)}
-                  disabled={isLocked}
-                  className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-60 ${e.delivered ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}
-                >
-                  {e.delivered ? 'Active' : 'Skip'}
-                </button>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    onClick={() => toggleSkip(c.id)}
+                    disabled={isLocked}
+                    title="Skip for today only"
+                    className={`rounded-full px-3 py-1 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-60 ${e.delivered ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}
+                  >
+                    {e.delivered ? 'Active' : 'Skip'}
+                  </button>
+                  <button
+                    onClick={() => setCustomerActive(c.id, false)}
+                    title="Pause this customer — auto-skipped every day until reactivated"
+                    className="rounded-full px-2 py-1 text-[10px] font-medium text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                  >
+                    Pause
+                  </button>
+                </div>
               </div>
               {e.delivered && (
                 <div className="grid grid-cols-2 gap-2">
@@ -275,6 +325,30 @@ export default function DailyEntry() {
           )
         })}
       </div>
+
+      {!loading && inactiveList.length > 0 && (
+        <div className="mt-6">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Paused ({inactiveList.length}) — auto-skipped, not billed
+          </p>
+          <div className="space-y-1.5">
+            {inactiveList.map((c) => (
+              <div key={c.id} className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 opacity-75">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-slate-500">{c.name}</p>
+                  {c.customer_id && <p className="text-xs font-mono text-slate-400">{c.customer_id}</p>}
+                </div>
+                <button
+                  onClick={() => setCustomerActive(c.id, true)}
+                  className="shrink-0 rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700 hover:bg-green-200"
+                >
+                  Activate
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="fixed bottom-16 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.1)] backdrop-blur md:bottom-0 md:left-56">
         <div className="mx-auto flex max-w-6xl gap-2">

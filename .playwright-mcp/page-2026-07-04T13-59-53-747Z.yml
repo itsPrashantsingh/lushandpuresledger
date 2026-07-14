@@ -1,0 +1,721 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - link "P PayPerWA" [ref=e6] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e7]: P
+        - generic [ref=e8]: PayPerWA
+      - navigation [ref=e9]:
+        - link "Features" [ref=e10] [cursor=pointer]:
+          - /url: /features
+        - link "Pricing" [ref=e11] [cursor=pointer]:
+          - /url: /pricing
+        - link "Blog" [ref=e12] [cursor=pointer]:
+          - /url: /blog
+        - link "Compare" [ref=e13] [cursor=pointer]:
+          - /url: /compare/wati-alternative
+        - link "API Docs" [ref=e14] [cursor=pointer]:
+          - /url: /docs
+      - generic [ref=e15]:
+        - group "Display currency" [ref=e16]:
+          - button "₹" [pressed] [ref=e17]
+          - button "$" [ref=e18]
+        - link "Login" [ref=e19] [cursor=pointer]:
+          - /url: /login
+          - button "Login" [ref=e20]
+        - link "Start Free Trial" [ref=e21] [cursor=pointer]:
+          - /url: /signup
+          - button "Start Free Trial" [ref=e22]
+  - main [ref=e23]:
+    - generic [ref=e26]:
+      - complementary [ref=e27]:
+        - navigation [ref=e28]:
+          - paragraph [ref=e29]: API Reference
+          - list [ref=e30]:
+            - listitem [ref=e31]:
+              - link "Getting Started" [ref=e32] [cursor=pointer]:
+                - /url: "#getting-started"
+            - listitem [ref=e33]:
+              - link "Authentication" [ref=e34] [cursor=pointer]:
+                - /url: "#authentication"
+            - listitem [ref=e35]:
+              - link "Rate Limits" [ref=e36] [cursor=pointer]:
+                - /url: "#rate-limits"
+            - listitem [ref=e37]:
+              - link "Channels (Multi-WABA)" [ref=e38] [cursor=pointer]:
+                - /url: "#channels"
+            - listitem [ref=e39]:
+              - link "Send Message" [ref=e40] [cursor=pointer]:
+                - /url: "#send-message"
+            - listitem [ref=e41]:
+              - link "Contacts" [ref=e42] [cursor=pointer]:
+                - /url: "#contacts"
+            - listitem [ref=e43]:
+              - link "Templates" [ref=e44] [cursor=pointer]:
+                - /url: "#templates"
+            - listitem [ref=e45]:
+              - link "Campaigns" [ref=e46] [cursor=pointer]:
+                - /url: "#campaigns"
+            - listitem [ref=e47]:
+              - link "Wallet / Balance" [ref=e48] [cursor=pointer]:
+                - /url: "#wallet"
+            - listitem [ref=e49]:
+              - link "Webhooks" [ref=e50] [cursor=pointer]:
+                - /url: "#webhooks"
+            - listitem [ref=e51]:
+              - link "Error Codes" [ref=e52] [cursor=pointer]:
+                - /url: "#errors"
+            - listitem [ref=e53]:
+              - link "Permissions" [ref=e54] [cursor=pointer]:
+                - /url: "#permissions"
+      - generic [ref=e55]:
+        - generic [ref=e56]:
+          - heading "PayPerWA API Documentation" [level=1] [ref=e57]
+          - paragraph [ref=e58]: Send WhatsApp messages, manage contacts and templates, run campaigns, and receive delivery webhooks through the PayPerWA REST API. Authenticate with your API key and start sending in minutes — no BSP markup, just ₹0.20 per message + Meta's standard charges.
+        - generic [ref=e59]:
+          - heading "Getting Started" [level=2] [ref=e60]
+          - paragraph [ref=e61]:
+            - text: The PayPerWA API lets you send WhatsApp messages, manage contacts, templates, and campaigns programmatically. All endpoints use the
+            - code [ref=e62]: /api/v1
+            - text: prefix and require API key authentication.
+          - heading "Base URL" [level=3] [ref=e63]
+          - code [ref=e65]: https://payperwa.com/api/v1
+          - heading "Response Format" [level=3] [ref=e66]
+          - paragraph [ref=e67]: "All responses follow a consistent JSON format:"
+          - code [ref=e69]: "// Success { \"success\": true, \"data\": { ... } } // Error { \"success\": false, \"error\": \"Human-readable error message\" }"
+        - generic [ref=e70]:
+          - heading "Authentication" [level=2] [ref=e71]
+          - paragraph [ref=e72]:
+            - text: Include your API key in the
+            - code [ref=e73]: Authorization
+            - text: header as a Bearer token with every request.
+          - code [ref=e75]: "Authorization: Bearer ppw_live_sk_your_key_here"
+          - paragraph [ref=e76]:
+            - text: Generate your API key in
+            - link "Dashboard → Settings → API tab" [ref=e77] [cursor=pointer]:
+              - /url: /dashboard/settings
+            - text: . You can create up to 5 keys per account. Keys are shown only once at creation time.
+          - heading "Quick Example — Check Balance" [level=3] [ref=e78]
+          - generic [ref=e79]:
+            - tablist [ref=e80]:
+              - tab "cURL" [selected] [ref=e81]
+              - tab "JavaScript" [ref=e82]
+              - tab "PHP" [ref=e83]
+              - tab "Python" [ref=e84]
+            - code [ref=e86]: "curl https://payperwa.com/api/v1/balance \\ -H \"Authorization: Bearer ppw_live_sk_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6\""
+          - paragraph [ref=e87]: Pick a language once — every other code sample on this page switches with you.
+        - generic [ref=e88]:
+          - heading "Rate Limits" [level=2] [ref=e89]
+          - paragraph [ref=e90]:
+            - text: "Each API key has a configurable rate limit (default:"
+            - strong [ref=e91]: 100 requests per minute
+            - text: ). Exceeding this limit returns a
+            - code [ref=e92]: "429"
+            - text: status code. Wait and retry after a few seconds.
+          - table [ref=e94]:
+            - rowgroup [ref=e95]:
+              - row "Plan Rate Limit" [ref=e96]:
+                - columnheader "Plan" [ref=e97]
+                - columnheader "Rate Limit" [ref=e98]
+            - rowgroup [ref=e99]:
+              - row "Default 100 requests/minute per key" [ref=e100]:
+                - cell "Default" [ref=e101]
+                - cell "100 requests/minute per key" [ref=e102]
+              - row "Custom (configurable per key) 10 -- 1,000 requests/minute" [ref=e103]:
+                - cell "Custom (configurable per key)" [ref=e104]
+                - cell "10 -- 1,000 requests/minute" [ref=e105]
+        - generic [ref=e106]:
+          - heading "Channels (Multi-WABA)" [level=2] [ref=e107]
+          - paragraph [ref=e108]:
+            - text: If your account has more than one connected WhatsApp Business Account (WABA) — for example, separate numbers for Sales and Support — every API call can be scoped to a specific channel. Pass the channel ID via the
+            - code [ref=e109]: X-Channel-Id
+            - text: header. If omitted, the request runs against your
+            - strong [ref=e110]: primary channel
+            - text: .
+          - heading "How to specify a channel" [level=3] [ref=e111]
+          - paragraph [ref=e112]: "Three options, in resolution order:"
+          - list [ref=e113]:
+            - listitem [ref=e114]:
+              - code [ref=e115]: X-Channel-Id
+              - text: HTTP header (recommended)
+            - listitem [ref=e116]:
+              - code [ref=e117]: channelId
+              - text: in the request body (POST/PUT only)
+            - listitem [ref=e118]:
+              - code [ref=e119]: "?channelId="
+              - text: query parameter (GET only)
+          - heading "Where it applies" [level=3] [ref=e120]
+          - table [ref=e122]:
+            - rowgroup [ref=e123]:
+              - row "Endpoint Effect of X-Channel-Id" [ref=e124]:
+                - columnheader "Endpoint" [ref=e125]
+                - columnheader "Effect of X-Channel-Id" [ref=e126]:
+                  - text: Effect of
+                  - code [ref=e127]: X-Channel-Id
+            - rowgroup [ref=e128]:
+              - row "POST /messages/send Sends from that channel's phone number; template must be approved on it" [ref=e129]:
+                - cell "POST /messages/send" [ref=e130]:
+                  - code [ref=e131]: POST /messages/send
+                - cell "Sends from that channel's phone number; template must be approved on it" [ref=e132]
+              - row "GET /contacts Filters list to contacts on that channel only" [ref=e133]:
+                - cell "GET /contacts" [ref=e134]:
+                  - code [ref=e135]: GET /contacts
+                - cell "Filters list to contacts on that channel only" [ref=e136]
+              - row "POST /contacts Creates / upserts the contact under that channel" [ref=e137]:
+                - cell "POST /contacts" [ref=e138]:
+                  - code [ref=e139]: POST /contacts
+                - cell "Creates / upserts the contact under that channel" [ref=e140]
+              - row "GET /templates Filters templates to that channel" [ref=e141]:
+                - cell "GET /templates" [ref=e142]:
+                  - code [ref=e143]: GET /templates
+                - cell "Filters templates to that channel" [ref=e144]
+              - row "GET /campaigns Filters campaigns to that channel" [ref=e145]:
+                - cell "GET /campaigns" [ref=e146]:
+                  - code [ref=e147]: GET /campaigns
+                - cell "Filters campaigns to that channel" [ref=e148]
+              - row "GET /balance Not used — wallet is shared across all channels" [ref=e149]:
+                - cell "GET /balance" [ref=e150]:
+                  - code [ref=e151]: GET /balance
+                - cell "Not used — wallet is shared across all channels" [ref=e152]
+          - heading "Example — Send from a specific channel" [level=3] [ref=e153]
+          - generic [ref=e154]:
+            - tablist [ref=e155]:
+              - tab "cURL" [selected] [ref=e156]
+              - tab "JavaScript" [ref=e157]
+              - tab "PHP" [ref=e158]
+              - tab "Python" [ref=e159]
+            - code [ref=e161]: "curl -X POST https://payperwa.com/api/v1/messages/send \\ -H \"Authorization: Bearer YOUR_API_KEY\" \\ -H \"X-Channel-Id: ch_550e8400e29b41d4a716446655440000\" \\ -H \"Content-Type: application/json\" \\ -d '{ \"to\": \"919876543210\", \"template_name\": \"order_confirmation\", \"variables\": [\"Rahul\", \"ORD-4521\"] }'"
+          - paragraph [ref=e162]:
+            - text: Find your channel IDs in
+            - link "Dashboard → Settings → Channels" [ref=e163] [cursor=pointer]:
+              - /url: /dashboard/settings
+            - text: . Sending an invalid or unauthorized channel ID returns
+            - code [ref=e164]: 400 Invalid channelId
+            - text: .
+        - generic [ref=e165]:
+          - heading "Send Message" [level=2] [ref=e166]
+          - generic [ref=e167]:
+            - generic [ref=e168]: POST
+            - code [ref=e169]: /api/v1/messages/send
+          - paragraph [ref=e170]: Send a single WhatsApp message using an approved template. The cost (Meta fee + ₹0.20 platform fee) is deducted from your wallet balance.
+          - paragraph [ref=e171]:
+            - text: "Permission required:"
+            - code [ref=e172]: messages:send
+          - heading "Request Body" [level=3] [ref=e173]
+          - code [ref=e175]: "{ \"to\": \"919876543210\", \"template_name\": \"order_confirmation\", \"language\": \"en\", \"variables\": [\"Rahul\", \"ORD-4521\", \"₹1,299\"] }"
+          - table [ref=e177]:
+            - rowgroup [ref=e178]:
+              - row "Field Type Required Description" [ref=e179]:
+                - columnheader "Field" [ref=e180]
+                - columnheader "Type" [ref=e181]
+                - columnheader "Required" [ref=e182]
+                - columnheader "Description" [ref=e183]
+            - rowgroup [ref=e184]:
+              - row "to string Yes Phone number with country code (e.g. 919876543210)" [ref=e185]:
+                - cell "to" [ref=e186]:
+                  - code [ref=e187]: to
+                - cell "string" [ref=e188]
+                - cell "Yes" [ref=e189]
+                - cell "Phone number with country code (e.g. 919876543210)" [ref=e190]
+              - row "template_name string Yes Name of your approved template" [ref=e191]:
+                - cell "template_name" [ref=e192]:
+                  - code [ref=e193]: template_name
+                - cell "string" [ref=e194]
+                - cell "Yes" [ref=e195]
+                - cell "Name of your approved template" [ref=e196]
+              - 'row "language string No Template language code (default: \"en\")" [ref=e197]':
+                - cell "language" [ref=e198]:
+                  - code [ref=e199]: language
+                - cell "string" [ref=e200]
+                - cell "No" [ref=e201]
+                - 'cell "Template language code (default: \"en\")" [ref=e202]'
+              - row "variables string[] No Template variable values in order" [ref=e203]:
+                - cell "variables" [ref=e204]:
+                  - code [ref=e205]: variables
+                - cell "string[]" [ref=e206]
+                - cell "No" [ref=e207]
+                - cell "Template variable values in order" [ref=e208]
+          - generic [ref=e209]:
+            - paragraph [ref=e210]: 🔐 Sending an OTP / login code
+            - paragraph [ref=e211]:
+              - text: For an
+              - code [ref=e212]: AUTHENTICATION
+              - text: template, pass the one-time code as the
+              - strong [ref=e213]: first value
+              - text: in
+              - code [ref=e214]: variables
+              - text: . PayPerWA automatically fills both the message body and the copy/autofill button with that same code.
+            - code [ref=e217]: "{ \"to\": \"919876543210\", \"template_name\": \"login\", \"variables\": [\"483920\"] }"
+          - heading "Response" [level=3] [ref=e218]
+          - code [ref=e220]: "{ \"success\": true, \"data\": { \"message_id\": \"wamid.HBgLMTIzNDU2Nzg5MA==\", \"status\": \"sent\", \"cost\": { \"meta_fee\": 0.86, \"platform_fee\": 0.20, \"total\": 1.06 } } }"
+          - heading "Example" [level=3] [ref=e221]
+          - generic [ref=e222]:
+            - tablist [ref=e223]:
+              - tab "cURL" [selected] [ref=e224]
+              - tab "JavaScript" [ref=e225]
+              - tab "PHP" [ref=e226]
+              - tab "Python" [ref=e227]
+            - code [ref=e229]: "curl -X POST https://payperwa.com/api/v1/messages/send \\ -H \"Authorization: Bearer YOUR_API_KEY\" \\ -H \"Content-Type: application/json\" \\ -d '{ \"to\": \"919876543210\", \"template_name\": \"order_confirmation\", \"language\": \"en\", \"variables\": [\"Rahul\", \"ORD-4521\", \"₹1,299\"] }'"
+        - generic [ref=e230]:
+          - heading "Contacts" [level=2] [ref=e231]
+          - generic [ref=e232]:
+            - generic [ref=e233]:
+              - generic [ref=e234]: GET
+              - code [ref=e235]: /api/v1/contacts
+            - paragraph [ref=e236]: List all contacts with optional pagination and search.
+            - paragraph [ref=e237]:
+              - text: "Permission:"
+              - code [ref=e238]: contacts:read
+            - heading "Query Parameters" [level=4] [ref=e239]
+            - table [ref=e241]:
+              - rowgroup [ref=e242]:
+                - row "Param Default Description" [ref=e243]:
+                  - columnheader "Param" [ref=e244]
+                  - columnheader "Default" [ref=e245]
+                  - columnheader "Description" [ref=e246]
+              - rowgroup [ref=e247]:
+                - row "page 1 Page number" [ref=e248]:
+                  - cell "page" [ref=e249]:
+                    - code [ref=e250]: page
+                  - cell "1" [ref=e251]
+                  - cell "Page number" [ref=e252]
+                - row "pageSize 50 Items per page (max 100)" [ref=e253]:
+                  - cell "pageSize" [ref=e254]:
+                    - code [ref=e255]: pageSize
+                  - cell "50" [ref=e256]
+                  - cell "Items per page (max 100)" [ref=e257]
+                - row "search - Search by name or phone" [ref=e258]:
+                  - cell "search" [ref=e259]:
+                    - code [ref=e260]: search
+                  - cell "-" [ref=e261]
+                  - cell "Search by name or phone" [ref=e262]
+            - code [ref=e264]: "// Response { \"success\": true, \"data\": { \"contacts\": [ { \"id\": \"550e8400-e29b-41d4-a716-446655440000\", \"name\": \"Rahul Sharma\", \"phone\": \"+919876543210\", \"email\": \"rahul@example.com\", \"optedIn\": true, \"tags\": [\"customer\", \"delhi\"], \"createdAt\": \"2026-01-15T10:30:00.000Z\" } ], \"total\": 1250, \"page\": 1, \"pageSize\": 50 } }"
+            - heading "Example" [level=3] [ref=e265]
+            - generic [ref=e266]:
+              - tablist [ref=e267]:
+                - tab "cURL" [selected] [ref=e268]
+                - tab "JavaScript" [ref=e269]
+                - tab "PHP" [ref=e270]
+                - tab "Python" [ref=e271]
+              - code [ref=e273]: "curl \"https://payperwa.com/api/v1/contacts?page=1&pageSize=50\" \\ -H \"Authorization: Bearer YOUR_API_KEY\""
+          - generic [ref=e274]:
+            - generic [ref=e275]:
+              - generic [ref=e276]: POST
+              - code [ref=e277]: /api/v1/contacts
+            - paragraph [ref=e278]:
+              - text: Create a contact, or update it if the phone already exists on the same channel (upsert). Tags are auto-created if they don't exist. Returns
+              - code [ref=e279]: "201"
+              - text: on create and
+              - code [ref=e280]: "200"
+              - text: on update; the response includes a
+              - code [ref=e281]: created
+              - text: boolean so you can branch.
+            - paragraph [ref=e282]:
+              - text: "Permission:"
+              - code [ref=e283]: contacts:write
+            - heading "Body Fields" [level=4] [ref=e284]
+            - table [ref=e286]:
+              - rowgroup [ref=e287]:
+                - row "Field Type Required Description" [ref=e288]:
+                  - columnheader "Field" [ref=e289]
+                  - columnheader "Type" [ref=e290]
+                  - columnheader "Required" [ref=e291]
+                  - columnheader "Description" [ref=e292]
+              - rowgroup [ref=e293]:
+                - row "name string Yes Contact display name (1-100 chars)" [ref=e294]:
+                  - cell "name" [ref=e295]:
+                    - code [ref=e296]: name
+                  - cell "string" [ref=e297]
+                  - cell "Yes" [ref=e298]
+                  - cell "Contact display name (1-100 chars)" [ref=e299]
+                - row "phone string Yes Phone number; auto-normalized to E.164" [ref=e300]:
+                  - cell "phone" [ref=e301]:
+                    - code [ref=e302]: phone
+                  - cell "string" [ref=e303]
+                  - cell "Yes" [ref=e304]
+                  - cell "Phone number; auto-normalized to E.164" [ref=e305]
+                - row "email string No Optional email" [ref=e306]:
+                  - cell "email" [ref=e307]:
+                    - code [ref=e308]: email
+                  - cell "string" [ref=e309]
+                  - cell "No" [ref=e310]
+                  - cell "Optional email" [ref=e311]
+                - row "optedIn boolean No Default true" [ref=e312]:
+                  - cell "optedIn" [ref=e313]:
+                    - code [ref=e314]: optedIn
+                  - cell "boolean" [ref=e315]
+                  - cell "No" [ref=e316]
+                  - cell "Default true" [ref=e317]:
+                    - text: Default
+                    - code [ref=e318]: "true"
+                - row "tags string[] No Tag names. New names are auto-created on your account" [ref=e319]:
+                  - cell "tags" [ref=e320]:
+                    - code [ref=e321]: tags
+                  - cell "string[]" [ref=e322]
+                  - cell "No" [ref=e323]
+                  - cell "Tag names. New names are auto-created on your account" [ref=e324]
+                - row "upsert boolean No Default true. Set false to fail with 409 if the phone already exists" [ref=e325]:
+                  - cell "upsert" [ref=e326]:
+                    - code [ref=e327]: upsert
+                  - cell "boolean" [ref=e328]
+                  - cell "No" [ref=e329]
+                  - cell "Default true. Set false to fail with 409 if the phone already exists" [ref=e330]:
+                    - text: Default
+                    - code [ref=e331]: "true"
+                    - text: . Set
+                    - code [ref=e332]: "false"
+                    - text: to fail with
+                    - code [ref=e333]: "409"
+                    - text: if the phone already exists
+                - row "tagsMode string No \"merge\" (default) keeps existing tags and adds new ones; \"replace\" wipes existing tags first" [ref=e334]:
+                  - cell "tagsMode" [ref=e335]:
+                    - code [ref=e336]: tagsMode
+                  - cell "string" [ref=e337]
+                  - cell "No" [ref=e338]
+                  - cell "\"merge\" (default) keeps existing tags and adds new ones; \"replace\" wipes existing tags first" [ref=e339]:
+                    - code [ref=e340]: "\"merge\""
+                    - text: (default) keeps existing tags and adds new ones;
+                    - code [ref=e341]: "\"replace\""
+                    - text: wipes existing tags first
+            - paragraph [ref=e342]: Soft-deleted contacts are reactivated automatically when the same phone is upserted again — no need to handle that case separately.
+            - code [ref=e344]: "// Request — create or update by phone, merge tags { \"name\": \"Priya Patel\", \"phone\": \"9123456789\", \"email\": \"priya@example.com\", \"tags\": [\"lead\", \"mumbai\"] } // Response — 201 Created (new) or 200 OK (updated) { \"success\": true, \"created\": true, \"data\": { \"id\": \"550e8400-e29b-41d4-a716-446655440001\", \"name\": \"Priya Patel\", \"phone\": \"+919123456789\", \"email\": \"priya@example.com\", \"optedIn\": true, \"tags\": [\"lead\", \"mumbai\"], \"createdAt\": \"2026-03-20T14:00:00.000Z\", \"updatedAt\": \"2026-03-20T14:00:00.000Z\" } }"
+            - heading "Example — Create or update (upsert + merge tags)" [level=3] [ref=e345]
+            - generic [ref=e346]:
+              - tablist [ref=e347]:
+                - tab "cURL" [selected] [ref=e348]
+                - tab "JavaScript" [ref=e349]
+                - tab "PHP" [ref=e350]
+                - tab "Python" [ref=e351]
+              - code [ref=e353]: "# Default: upsert + merge tags curl -X POST https://payperwa.com/api/v1/contacts \\ -H \"Authorization: Bearer YOUR_API_KEY\" \\ -H \"Content-Type: application/json\" \\ -d '{\"name\":\"Priya Patel\",\"phone\":\"9123456789\",\"tags\":[\"lead\",\"mumbai\"]}' # Replace tags entirely instead of merging curl -X POST https://payperwa.com/api/v1/contacts \\ -H \"Authorization: Bearer YOUR_API_KEY\" \\ -H \"Content-Type: application/json\" \\ -d '{\"name\":\"Priya Patel\",\"phone\":\"9123456789\",\"tags\":[\"customer\"],\"tagsMode\":\"replace\"}' # Strict create-only — return 409 if the phone already exists curl -X POST https://payperwa.com/api/v1/contacts \\ -H \"Authorization: Bearer YOUR_API_KEY\" \\ -H \"Content-Type: application/json\" \\ -d '{\"name\":\"Priya Patel\",\"phone\":\"9123456789\",\"upsert\":false}'"
+          - generic [ref=e354]:
+            - generic [ref=e355]:
+              - generic [ref=e356]: GET
+              - code [ref=e357]: "/api/v1/contacts/{id}"
+            - paragraph [ref=e358]: Get a single contact by ID with tags and groups.
+          - generic [ref=e359]:
+            - generic [ref=e360]:
+              - generic [ref=e361]: PUT
+              - code [ref=e362]: "/api/v1/contacts/{id}"
+            - paragraph [ref=e363]:
+              - text: Update a contact. Send only the fields you want to change. Replacing
+              - code [ref=e364]: tags
+              - text: replaces all existing tags.
+            - code [ref=e366]: "// Request { \"name\": \"Priya P.\", \"tags\": [\"customer\", \"vip\"] }"
+          - generic [ref=e367]:
+            - generic [ref=e368]:
+              - generic [ref=e369]: DELETE
+              - code [ref=e370]: "/api/v1/contacts/{id}"
+            - paragraph [ref=e371]: Soft-delete a contact (can be restored by support).
+        - generic [ref=e372]:
+          - heading "Templates" [level=2] [ref=e373]
+          - generic [ref=e374]:
+            - generic [ref=e375]: GET
+            - code [ref=e376]: /api/v1/templates
+          - paragraph [ref=e377]: List your approved message templates. Filter by status or category.
+          - paragraph [ref=e378]:
+            - text: "Permission:"
+            - code [ref=e379]: templates:read
+          - heading "Query Parameters" [level=4] [ref=e380]
+          - table [ref=e382]:
+            - rowgroup [ref=e383]:
+              - row "Param Default Description" [ref=e384]:
+                - columnheader "Param" [ref=e385]
+                - columnheader "Default" [ref=e386]
+                - columnheader "Description" [ref=e387]
+            - rowgroup [ref=e388]:
+              - row "status APPROVED DRAFT, PENDING, APPROVED, REJECTED" [ref=e389]:
+                - cell "status" [ref=e390]:
+                  - code [ref=e391]: status
+                - cell "APPROVED" [ref=e392]
+                - cell "DRAFT, PENDING, APPROVED, REJECTED" [ref=e393]
+              - row "category - MARKETING, UTILITY, AUTHENTICATION" [ref=e394]:
+                - cell "category" [ref=e395]:
+                  - code [ref=e396]: category
+                - cell "-" [ref=e397]
+                - cell "MARKETING, UTILITY, AUTHENTICATION" [ref=e398]
+          - code [ref=e400]: "// Response { \"success\": true, \"data\": { \"templates\": [ { \"id\": \"550e8400-e29b-41d4-a716-446655440002\", \"name\": \"order_confirmation\", \"category\": \"UTILITY\", \"language\": \"en\", \"status\": \"APPROVED\", \"body\": \"Hi {{1}}, your order {{2}} of {{3}} has been confirmed!\", \"header\": null, \"footer\": \"Thank you for shopping with us\", \"buttons\": null, \"createdAt\": \"2026-02-01T12:00:00.000Z\" } ] } }"
+          - heading "Example" [level=3] [ref=e401]
+          - generic [ref=e402]:
+            - tablist [ref=e403]:
+              - tab "cURL" [selected] [ref=e404]
+              - tab "JavaScript" [ref=e405]
+              - tab "PHP" [ref=e406]
+              - tab "Python" [ref=e407]
+            - code [ref=e409]: "curl \"https://payperwa.com/api/v1/templates?status=APPROVED\" \\ -H \"Authorization: Bearer YOUR_API_KEY\""
+        - generic [ref=e410]:
+          - heading "Campaigns" [level=2] [ref=e411]
+          - generic [ref=e412]:
+            - generic [ref=e413]:
+              - generic [ref=e414]: GET
+              - code [ref=e415]: /api/v1/campaigns
+            - paragraph [ref=e416]: List all campaigns with status and delivery stats.
+            - paragraph [ref=e417]:
+              - text: "Permission:"
+              - code [ref=e418]: campaigns:read
+            - code [ref=e420]: "// Response { \"success\": true, \"data\": { \"campaigns\": [ { \"id\": \"550e8400-e29b-41d4-a716-446655440003\", \"name\": \"Diwali Offer 2026\", \"status\": \"COMPLETED\", \"template\": \"promo_offer\", \"templateCategory\": \"MARKETING\", \"totalMessages\": 5000, \"sentCount\": 5000, \"deliveredCount\": 4850, \"readCount\": 3200, \"failedCount\": 150, \"estimatedCost\": \"5300.00\", \"actualCost\": \"5300.00\", \"createdAt\": \"2026-03-10T09:00:00.000Z\" } ], \"total\": 42, \"page\": 1, \"pageSize\": 20 } }"
+          - generic [ref=e421]:
+            - generic [ref=e422]:
+              - generic [ref=e423]: POST
+              - code [ref=e424]: /api/v1/campaigns
+            - paragraph [ref=e425]:
+              - text: Create and optionally send a campaign. Set
+              - code [ref=e426]: "send: true"
+              - text: to immediately queue messages, or omit it to create as DRAFT.
+            - paragraph [ref=e427]:
+              - text: "Permission:"
+              - code [ref=e428]: campaigns:send
+            - code [ref=e430]: "// Request { \"name\": \"March Sale\", \"templateId\": \"550e8400-e29b-41d4-a716-446655440002\", \"groupIds\": [\"group-uuid-1\"], \"variables\": { \"1\": \"name\", \"2\": \"20%\", \"3\": \"MARCH20\" }, \"send\": true } // Response (201) { \"success\": true, \"data\": { \"id\": \"550e8400-e29b-41d4-a716-446655440004\", \"name\": \"March Sale\", \"status\": \"SENDING\", \"totalContacts\": 5000, \"estimatedCost\": { \"meta_fee\": \"4300.00\", \"platform_fee\": \"1000.00\", \"total\": \"5300.00\" }, \"message\": \"Campaign queued. 5000 messages will be sent.\" } }"
+            - heading "Example" [level=3] [ref=e431]
+            - generic [ref=e432]:
+              - tablist [ref=e433]:
+                - tab "cURL" [selected] [ref=e434]
+                - tab "JavaScript" [ref=e435]
+                - tab "PHP" [ref=e436]
+                - tab "Python" [ref=e437]
+              - code [ref=e439]: "curl -X POST https://payperwa.com/api/v1/campaigns \\ -H \"Authorization: Bearer YOUR_API_KEY\" \\ -H \"Content-Type: application/json\" \\ -d '{ \"name\": \"March Sale\", \"templateId\": \"your-template-uuid\", \"groupIds\": [\"your-group-uuid\"], \"variables\": { \"1\": \"name\", \"2\": \"20%\", \"3\": \"MARCH20\" }, \"send\": true }'"
+        - generic [ref=e440]:
+          - heading "Wallet / Balance" [level=2] [ref=e441]
+          - generic [ref=e442]:
+            - generic [ref=e443]: GET
+            - code [ref=e444]: /api/v1/balance
+          - paragraph [ref=e445]: Check your current wallet balance. All amounts in INR.
+          - paragraph [ref=e446]:
+            - text: "Permission:"
+            - code [ref=e447]: balance:read
+          - code [ref=e449]: "// Response { \"success\": true, \"data\": { \"balance\": 4520.60, \"currency\": \"INR\" } }"
+          - heading "Example" [level=3] [ref=e450]
+          - generic [ref=e451]:
+            - tablist [ref=e452]:
+              - tab "cURL" [selected] [ref=e453]
+              - tab "JavaScript" [ref=e454]
+              - tab "PHP" [ref=e455]
+              - tab "Python" [ref=e456]
+            - code [ref=e458]: "curl https://payperwa.com/api/v1/balance \\ -H \"Authorization: Bearer YOUR_API_KEY\""
+        - generic [ref=e459]:
+          - heading "Webhooks" [level=2] [ref=e460]
+          - paragraph [ref=e461]:
+            - text: PayPerWA can send delivery status callbacks to your server whenever a message status changes (sent, delivered, read, or failed). Configure your webhook URL in
+            - link "Dashboard → Settings" [ref=e462] [cursor=pointer]:
+              - /url: /dashboard/settings
+            - text: .
+          - heading "Webhook Payload" [level=3] [ref=e463]
+          - code [ref=e465]: "{ \"event\": \"message.status\", \"message_id\": \"wamid.HBgLMTIzNDU2Nzg5MA==\", \"status\": \"delivered\", \"timestamp\": \"2026-03-20T14:35:00Z\", \"recipient\": \"919876543210\", \"campaign_id\": \"camp_abc123\" }"
+          - heading "Status Values" [level=3] [ref=e466]
+          - table [ref=e468]:
+            - rowgroup [ref=e469]:
+              - row "Status Description" [ref=e470]:
+                - columnheader "Status" [ref=e471]
+                - columnheader "Description" [ref=e472]
+            - rowgroup [ref=e473]:
+              - row "sent Message sent to WhatsApp servers" [ref=e474]:
+                - cell "sent" [ref=e475]:
+                  - code [ref=e476]: sent
+                - cell "Message sent to WhatsApp servers" [ref=e477]
+              - row "delivered Message delivered to recipient's device" [ref=e478]:
+                - cell "delivered" [ref=e479]:
+                  - code [ref=e480]: delivered
+                - cell "Message delivered to recipient's device" [ref=e481]
+              - row "read Recipient read the message" [ref=e482]:
+                - cell "read" [ref=e483]:
+                  - code [ref=e484]: read
+                - cell "Recipient read the message" [ref=e485]
+              - row "failed Message could not be delivered (wallet refunded)" [ref=e486]:
+                - cell "failed" [ref=e487]:
+                  - code [ref=e488]: failed
+                - cell "Message could not be delivered (wallet refunded)" [ref=e489]
+          - heading "Verifying Webhooks" [level=3] [ref=e490]
+          - paragraph [ref=e491]:
+            - text: Each webhook request includes an
+            - code [ref=e492]: X-PayPerWA-Signature
+            - text: header. Verify it using your webhook secret (available in Settings) with HMAC-SHA256.
+          - code [ref=e494]: "const crypto = require(\"crypto\"); function verifyWebhook(body, signature, secret) { const expected = crypto .createHmac(\"sha256\", secret) .update(JSON.stringify(body)) .digest(\"hex\"); return signature === expected; }"
+        - generic [ref=e495]:
+          - heading "Error Codes" [level=2] [ref=e496]
+          - paragraph [ref=e497]: "All errors follow a consistent format:"
+          - code [ref=e499]: "{ \"success\": false, \"error\": \"Human-readable error message\" }"
+          - table [ref=e501]:
+            - rowgroup [ref=e502]:
+              - row "Code Status Description" [ref=e503]:
+                - columnheader "Code" [ref=e504]
+                - columnheader "Status" [ref=e505]
+                - columnheader "Description" [ref=e506]
+            - rowgroup [ref=e507]:
+              - row "400 Bad Request Invalid request body or missing required fields" [ref=e508]:
+                - cell "400" [ref=e509]:
+                  - code [ref=e510]: "400"
+                - cell "Bad Request" [ref=e511]
+                - cell "Invalid request body or missing required fields" [ref=e512]
+              - row "401 Unauthorized Invalid, missing, expired, or deactivated API key" [ref=e513]:
+                - cell "401" [ref=e514]:
+                  - code [ref=e515]: "401"
+                - cell "Unauthorized" [ref=e516]
+                - cell "Invalid, missing, expired, or deactivated API key" [ref=e517]
+              - row "402 Payment Required Insufficient wallet balance. Recharge at Dashboard → Billing" [ref=e518]:
+                - cell "402" [ref=e519]:
+                  - code [ref=e520]: "402"
+                - cell "Payment Required" [ref=e521]
+                - cell "Insufficient wallet balance. Recharge at Dashboard → Billing" [ref=e522]:
+                  - text: Insufficient wallet balance. Recharge at
+                  - link "Dashboard → Billing" [ref=e523] [cursor=pointer]:
+                    - /url: /dashboard/billing
+              - row "403 Forbidden API key lacks the required permission for this endpoint" [ref=e524]:
+                - cell "403" [ref=e525]:
+                  - code [ref=e526]: "403"
+                - cell "Forbidden" [ref=e527]
+                - cell "API key lacks the required permission for this endpoint" [ref=e528]
+              - row "404 Not Found Resource not found (contact, template, or campaign)" [ref=e529]:
+                - cell "404" [ref=e530]:
+                  - code [ref=e531]: "404"
+                - cell "Not Found" [ref=e532]
+                - cell "Resource not found (contact, template, or campaign)" [ref=e533]
+              - row "409 Conflict Duplicate resource (e.g. contact with same phone number)" [ref=e534]:
+                - cell "409" [ref=e535]:
+                  - code [ref=e536]: "409"
+                - cell "Conflict" [ref=e537]
+                - cell "Duplicate resource (e.g. contact with same phone number)" [ref=e538]
+              - row "429 Too Many Requests Rate limit exceeded. Wait and retry." [ref=e539]:
+                - cell "429" [ref=e540]:
+                  - code [ref=e541]: "429"
+                - cell "Too Many Requests" [ref=e542]
+                - cell "Rate limit exceeded. Wait and retry." [ref=e543]
+              - row "500 Server Error Internal server error. Contact support if this persists." [ref=e544]:
+                - cell "500" [ref=e545]:
+                  - code [ref=e546]: "500"
+                - cell "Server Error" [ref=e547]
+                - cell "Internal server error. Contact support if this persists." [ref=e548]
+        - generic [ref=e549]:
+          - heading "Permissions" [level=2] [ref=e550]
+          - paragraph [ref=e551]: Each API key can be scoped with specific permissions. New keys are created with all permissions by default. You can restrict them when creating or editing a key.
+          - table [ref=e553]:
+            - rowgroup [ref=e554]:
+              - row "Permission Grants Access To" [ref=e555]:
+                - columnheader "Permission" [ref=e556]
+                - columnheader "Grants Access To" [ref=e557]
+            - rowgroup [ref=e558]:
+              - row "contacts:read GET /api/v1/contacts, GET /api/v1/contacts/:id" [ref=e559]:
+                - cell "contacts:read" [ref=e560]:
+                  - code [ref=e561]: contacts:read
+                - cell "GET /api/v1/contacts, GET /api/v1/contacts/:id" [ref=e562]
+              - row "contacts:write POST /api/v1/contacts, PUT /api/v1/contacts/:id, DELETE /api/v1/contacts/:id" [ref=e563]:
+                - cell "contacts:write" [ref=e564]:
+                  - code [ref=e565]: contacts:write
+                - cell "POST /api/v1/contacts, PUT /api/v1/contacts/:id, DELETE /api/v1/contacts/:id" [ref=e566]
+              - row "templates:read GET /api/v1/templates" [ref=e567]:
+                - cell "templates:read" [ref=e568]:
+                  - code [ref=e569]: templates:read
+                - cell "GET /api/v1/templates" [ref=e570]
+              - row "messages:send POST /api/v1/messages/send" [ref=e571]:
+                - cell "messages:send" [ref=e572]:
+                  - code [ref=e573]: messages:send
+                - cell "POST /api/v1/messages/send" [ref=e574]
+              - row "campaigns:read GET /api/v1/campaigns" [ref=e575]:
+                - cell "campaigns:read" [ref=e576]:
+                  - code [ref=e577]: campaigns:read
+                - cell "GET /api/v1/campaigns" [ref=e578]
+              - row "campaigns:send POST /api/v1/campaigns (create + send)" [ref=e579]:
+                - cell "campaigns:send" [ref=e580]:
+                  - code [ref=e581]: campaigns:send
+                - cell "POST /api/v1/campaigns (create + send)" [ref=e582]
+              - row "balance:read GET /api/v1/balance" [ref=e583]:
+                - cell "balance:read" [ref=e584]:
+                  - code [ref=e585]: balance:read
+                - cell "GET /api/v1/balance" [ref=e586]
+        - generic [ref=e587]:
+          - heading "Ready to Integrate?" [level=2] [ref=e588]
+          - paragraph [ref=e589]: Sign up, grab your API key, and start sending WhatsApp messages in minutes.
+          - link "Get Your API Key" [ref=e590] [cursor=pointer]:
+            - /url: /signup
+  - contentinfo [ref=e591]:
+    - generic [ref=e592]:
+      - generic [ref=e593]:
+        - generic [ref=e594]:
+          - generic [ref=e595]:
+            - generic [ref=e596]: P
+            - generic [ref=e597]: PayPerWA
+          - paragraph [ref=e598]:
+            - text: WhatsApp Marketing Platform
+            - generic [ref=e599]: Sirf 20 Paisa Per Message
+          - generic [ref=e600]:
+            - generic [ref=e601]: 🇮🇳
+            - text: Made in India
+          - generic [ref=e602]:
+            - generic [ref=e603]:
+              - img [ref=e604]
+              - img [ref=e608]
+            - generic [ref=e610]:
+              - generic [ref=e611]: Meta Tech Partner
+              - generic [ref=e612]: Official WhatsApp Business API
+              - generic [ref=e613]: Direct Cloud API · Verified
+        - generic [ref=e614]:
+          - heading "Product" [level=4] [ref=e615]
+          - list [ref=e616]:
+            - listitem [ref=e617]:
+              - link "Features" [ref=e618] [cursor=pointer]:
+                - /url: /features
+            - listitem [ref=e619]:
+              - link "Pricing" [ref=e620] [cursor=pointer]:
+                - /url: /pricing
+            - listitem [ref=e621]:
+              - link "Country Rates" [ref=e622] [cursor=pointer]:
+                - /url: /pricing/rates
+            - listitem [ref=e623]:
+              - link "API Docs" [ref=e624] [cursor=pointer]:
+                - /url: /docs
+            - listitem [ref=e625]:
+              - link "Blog" [ref=e626] [cursor=pointer]:
+                - /url: /blog
+        - generic [ref=e627]:
+          - heading "Company" [level=4] [ref=e628]
+          - list [ref=e629]:
+            - listitem [ref=e630]:
+              - link "About" [ref=e631] [cursor=pointer]:
+                - /url: /about
+            - listitem [ref=e632]:
+              - link "Contact" [ref=e633] [cursor=pointer]:
+                - /url: /contact
+            - listitem [ref=e634]:
+              - link "Help Center" [ref=e635] [cursor=pointer]:
+                - /url: /help
+            - listitem [ref=e636]:
+              - link "Sitemap" [ref=e637] [cursor=pointer]:
+                - /url: /sitemap
+        - generic [ref=e638]:
+          - heading "Legal" [level=4] [ref=e639]
+          - list [ref=e640]:
+            - listitem [ref=e641]:
+              - link "Terms of Service" [ref=e642] [cursor=pointer]:
+                - /url: /terms
+            - listitem [ref=e643]:
+              - link "Privacy Policy" [ref=e644] [cursor=pointer]:
+                - /url: /privacy
+            - listitem [ref=e645]:
+              - link "Refund Policy" [ref=e646] [cursor=pointer]:
+                - /url: /refund
+        - generic [ref=e647]:
+          - heading "Compare" [level=4] [ref=e648]
+          - list [ref=e649]:
+            - listitem [ref=e650]:
+              - link "vs Wati" [ref=e651] [cursor=pointer]:
+                - /url: /compare/wati-alternative
+            - listitem [ref=e652]:
+              - link "vs AiSensy" [ref=e653] [cursor=pointer]:
+                - /url: /compare/aisensy-alternative
+            - listitem [ref=e654]:
+              - link "vs Interakt" [ref=e655] [cursor=pointer]:
+                - /url: /compare/interakt-alternative
+      - generic [ref=e656]:
+        - generic [ref=e657]:
+          - heading "WhatsApp Marketing Tips" [level=4] [ref=e658]
+          - paragraph [ref=e659]: Free tips, template ideas & platform updates. No spam, unsubscribe anytime.
+        - generic [ref=e661]:
+          - textbox "Enter your email" [ref=e662]
+          - button "Subscribe" [ref=e663]:
+            - img [ref=e664]
+            - text: Subscribe
+      - paragraph [ref=e668]: © 2026 PayPerWA. All rights reserved. Meta and WhatsApp are trademarks of Meta Platforms, Inc.
+  - link "Chat with us on WhatsApp" [ref=e669] [cursor=pointer]:
+    - /url: https://wa.me/919277184741?text=Hi, I'm interested in PayPerWA
+    - img [ref=e670]
+    - generic: Chat with us
+  - region "Notifications alt+T"
+  - alert [ref=e672]

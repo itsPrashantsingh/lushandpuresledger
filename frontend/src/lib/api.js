@@ -25,3 +25,11 @@ export async function apiPost(path, body = {}, config = {}) {
   })
 }
 
+export async function apiPut(path, body = {}, config = {}) {
+  const headers = await authHeaders()
+  return axios.put(`${BACKEND_URL}${path}`, body, {
+    ...config,
+    headers: { ...headers, ...(config.headers || {}) }
+  })
+}
+

@@ -2,6 +2,8 @@ const express = require('express')
 const router = express.Router()
 const crypto = require('crypto')
 const { processWebhookEvent } = require('../lib/razorpay-sync')
+const supabase = require('../lib/supabase')
+const { getProvider } = require('../lib/whatsapp')
 
 router.post('/razorpay', async (req, res) => {
   const signature = req.headers['x-razorpay-signature']
@@ -49,6 +51,50 @@ router.post('/razorpay', async (req, res) => {
     }
 
     // Transient DB/API error — Razorpay will retry
+    return res.status(500).json({ error: 'Processing failed' })
+  }
+
+  res.status(200).json({ received: true })
+})
+
+// ── WhatsApp delivery-status webhook (provider-aware) ──────────
+// GET is used by Meta for the hub.challenge subscription handshake.
+router.get('/whatsapp', (req, res) => {
+  const mode = req.query['hub.mode']
+  const token = req.query['hub.verify_token']
+  const challenge = req.query['hub.challenge']
+  if (mode === 'subscribe' && token && token === process.env.META_WEBHOOK_VERIFY_TOKEN) {
+    return res.status(200).send(challenge)
+  }
+  return res.sendStatus(403)
+})
+
+router.post('/whatsapp', async (req, res) => {
+  const provider = getProvider()
+  const signature = req.headers[provider.signatureHeader]
+
+  if (!provider.verifyWebhook(req.body, signature)) {
+    console.error('Invalid WhatsApp webhook signature')
+    return res.status(401).json({ error: 'Invalid signature' })
+  }
+
+  let event
+  try {
+    event = JSON.parse(req.body.toString())
+  } catch {
+    return res.status(400).json({ error: 'Invalid JSON' })
+  }
+
+  try {
+    const { wamid, status } = provider.parseStatusEvent(event)
+    if (wamid && status) {
+      await supabase
+        .from('whatsapp_messages')
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq('wamid', wamid)
+    }
+  } catch (err) {
+    console.error('WhatsApp webhook error:', err.message)
     return res.status(500).json({ error: 'Processing failed' })
   }
 

@@ -104,10 +104,17 @@ router.post('/verify-payment', async (req, res) => {
   }
 })
 
-/** Admin — sync all unpaid bills with Razorpay links */
+/** Admin — sync all unpaid bills with Razorpay links. Optional { month: 'YYYY-MM' } scopes it. */
 router.post('/reconcile', async (req, res) => {
   try {
-    const result = await reconcileUnpaidBills()
+    const { month } = req.body || {}
+    let periodStart, periodEnd
+    if (month && /^\d{4}-\d{2}$/.test(month)) {
+      const [y, m] = month.split('-').map(Number)
+      periodStart = `${y}-${String(m).padStart(2, '0')}-01`
+      periodEnd = `${y}-${String(m).padStart(2, '0')}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
+    }
+    const result = await reconcileUnpaidBills({ periodStart, periodEnd })
     res.json({ success: true, ...result })
   } catch (err) {
     console.error('reconcile:', err)

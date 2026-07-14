@@ -16,15 +16,17 @@ import {
 } from '../lib/bills'
 import { openBillPdf } from '../lib/pdf'
 import { shareBillOnWhatsApp } from '../lib/whatsapp'
+import { sendBillViaApi, sendTextViaApi } from '../lib/whatsapp-api'
 import WhatsAppSendQueue from '../components/WhatsAppSendQueue'
 import LoadingOverlay from '../components/LoadingOverlay'
 import { getBillStatus, formatCurrency, whatsappLink, currentYearMonth, formatDate } from '../lib/utils'
-import { buildPaymentDueMessage, buildCashReceivedMessage } from '../lib/messages'
+import { buildPaymentDueMessage } from '../lib/messages'
 
 export default function Bills() {
   const [bills, setBills] = useState([])
   const [paidMap, setPaidMap] = useState({})
   const [tab, setTab] = useState('all')
+  const [search, setSearch] = useState('')
   const [month, setMonth] = useState(currentYearMonth())
   const [loading, setLoading] = useState(true)
   const [cashModal, setCashModal] = useState(null)
@@ -97,6 +99,24 @@ export default function Bills() {
     setProgress(null)
   }
 
+  async function runSyncRazorpay() {
+    setRunning('sync')
+    try {
+      await wakeBackend()
+      const result = await reconcileRazorpayPayments(month)
+      setToast({
+        message: result.synced?.length
+          ? `Synced ${result.synced.length} of ${result.checked} Razorpay payment(s) ✓`
+          : `Checked ${result.checked || 0} bill(s) — nothing new to sync`,
+        type: 'success'
+      })
+      loadBills()
+    } catch (err) {
+      setToast({ message: err.response?.data?.error || err.message, type: 'error' })
+    }
+    setRunning('')
+  }
+
   async function runRazorpayAll() {
     setRunning('razorpay')
     try {
@@ -130,10 +150,15 @@ export default function Bills() {
   }
 
   function filteredBills() {
+    const q = search.trim().toLowerCase()
     return bills.filter((b) => {
       const status = getBillStatus(b, paidMap[b.id] || 0)
-      if (tab === 'all') return true
-      return status === tab
+      if (tab !== 'all' && status !== tab) return false
+      if (!q) return true
+      const name = (b.customers?.name || '').toLowerCase()
+      const cid = (b.customers?.customer_id || '').toLowerCase()
+      const bid = (b.id || '').toLowerCase()
+      return name.includes(q) || cid.includes(q) || bid.includes(q)
     })
   }
 
@@ -147,10 +172,17 @@ export default function Bills() {
     if (!cashModal || !cashAmount || savingCash) return
     setSavingCash(true)
     try {
-      const { customer, applied } = await markCashPayment(cashModal, cashAmount, cashModal.customers, cashPaidAt)
-      window.open(whatsappLink(customer.whatsapp_no, buildCashReceivedMessage(customer, formatCurrency(applied))), '_blank')
+      const { applied } = await markCashPayment(cashModal, cashAmount, cashModal.customers, cashPaidAt)
+      const billId = cashModal.id
       setCashModal(null)
       loadBills()
+      // Acknowledgement via API (falls back silently if provider not configured)
+      try {
+        const res = await sendTextViaApi('cash_received', billId, { amount: applied })
+        setToast({ message: res.ok ? 'Cash recorded · acknowledgement sent ✓' : 'Cash recorded (WhatsApp ack not sent)', type: 'success' })
+      } catch {
+        setToast({ message: 'Cash recorded', type: 'success' })
+      }
     } catch (err) {
       setToast({ message: err.message, type: 'error' })
     } finally {
@@ -175,9 +207,19 @@ export default function Bills() {
   }
 
   async function handleReminder(bill) {
-    const balance = formatCurrency(Number(bill.total_amount) - (paidMap[bill.id] || 0))
-    const msg = buildPaymentDueMessage(bill.customers, balance, bill.razorpay_short_url)
-    window.open(whatsappLink(bill.customers.whatsapp_no, msg), '_blank')
+    try {
+      const res = await sendTextViaApi('payment_reminder_t1', bill.id)
+      if (res.ok) {
+        setToast({ message: 'Reminder sent on WhatsApp ✓', type: 'success' })
+      } else {
+        // fall back to free wa.me manual send
+        const balance = formatCurrency(Number(bill.total_amount) - (paidMap[bill.id] || 0))
+        const msg = buildPaymentDueMessage(bill.customers, balance, bill.razorpay_short_url)
+        window.open(whatsappLink(bill.customers.whatsapp_no, msg), '_blank')
+      }
+    } catch (err) {
+      setToast({ message: err.response?.data?.error || err.message, type: 'error' })
+    }
   }
 
   async function handleViewPdf(bill) {
@@ -186,6 +228,24 @@ export default function Bills() {
   }
 
   async function handleSendBill(bill) {
+    const { data: entries } = await supabase.from('daily_entries').select('*').eq('customer_id', bill.customer_id).gte('date', bill.period_start).lte('date', bill.period_end).order('date')
+    const valid = billableEntries(entries || [])
+    setToast({ message: `Sending ${bill.id}…`, type: 'success' })
+    try {
+      const res = await sendBillViaApi(bill.customers, valid, bill)
+      if (res.ok) {
+        setToast({ message: 'Bill sent on WhatsApp with PDF ✓', type: 'success' })
+        loadBills()
+      } else {
+        setToast({ message: res.error || 'WhatsApp send failed — use Manual', type: 'error' })
+      }
+    } catch (err) {
+      setToast({ message: err.response?.data?.error || err.message, type: 'error' })
+    }
+  }
+
+  // wa.me fallback (free, manual attach)
+  async function handleSendBillManual(bill) {
     const { data: entries } = await supabase.from('daily_entries').select('*').eq('customer_id', bill.customer_id).gte('date', bill.period_start).lte('date', bill.period_end).order('date')
     const valid = billableEntries(entries || [])
     const result = await shareBillOnWhatsApp(bill.customers, valid, bill, bill.razorpay_short_url)
@@ -230,7 +290,7 @@ export default function Bills() {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <button onClick={runGenerateAll} disabled={!!running} className="rounded-xl bg-green-600 px-4 py-3 text-sm font-bold text-white hover:bg-green-700 disabled:opacity-50">
             {running === 'generate' ? 'Working...' : '1️⃣ Generate All Bills + Razorpay'}
           </button>
@@ -239,6 +299,9 @@ export default function Bills() {
           </button>
           <button onClick={runSendAllBills} disabled={!!running} className="rounded-xl border-2 border-amber-400 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900 hover:bg-amber-100 disabled:opacity-50">
             {running === 'send' ? 'Sending...' : '3️⃣ Send All Bills (PDF + WhatsApp)'}
+          </button>
+          <button onClick={runSyncRazorpay} disabled={!!running} title="Check Razorpay for payments received this month and mark those bills paid" className="rounded-xl border-2 border-emerald-400 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-900 hover:bg-emerald-100 disabled:opacity-50">
+            {running === 'sync' ? 'Syncing...' : '🔄 Sync Razorpay Payments'}
           </button>
         </div>
 
@@ -266,13 +329,21 @@ export default function Bills() {
         )}
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {tabs.map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)} className={`rounded-full px-4 py-1.5 text-sm font-medium ${tab === t.key ? 'bg-green-600 text-white' : 'bg-slate-200 text-slate-600'}`}>
             {t.label}
           </button>
         ))}
       </div>
+
+      <input
+        type="search"
+        placeholder="Search customer, ID or bill no…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="w-full rounded-lg border px-4 py-2.5"
+      />
 
       {loading ? (
         <p className="text-center text-slate-500">Loading...</p>
@@ -285,10 +356,15 @@ export default function Bills() {
           {filteredBills().map((bill) => (
             <div key={bill.id}>
               <BillCard bill={bill} paidAmount={paidMap[bill.id] || 0} onMarkCashPaid={openCashModal} onSendReminder={handleReminder} onViewPdf={handleViewPdf} onSyncRazorpay={handleSyncRazorpay} syncing={syncingBillId === bill.id} />
-              <button onClick={() => handleSendBill(bill)} className="mt-1 text-sm text-green-600 hover:underline">
-                📲 Send bill PDF on WhatsApp
-                {bill.sent_at && <span className="ml-2 text-xs text-slate-400">sent {formatDate(bill.sent_at.slice(0, 10))}</span>}
-              </button>
+              <div className="mt-1 flex items-center gap-3">
+                <button onClick={() => handleSendBill(bill)} className="text-sm font-medium text-green-600 hover:underline">
+                  📲 Send bill on WhatsApp
+                </button>
+                <button onClick={() => handleSendBillManual(bill)} className="text-xs text-slate-400 hover:underline">
+                  Manual
+                </button>
+                {bill.sent_at && <span className="text-xs text-slate-400">sent {formatDate(bill.sent_at.slice(0, 10))}</span>}
+              </div>
             </div>
           ))}
         </div>
