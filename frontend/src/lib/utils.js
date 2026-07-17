@@ -90,6 +90,12 @@ export function statusBadgeClass(status) {
   return 'bg-red-100 text-red-700'
 }
 
+/** Human label for a payment mode. 'upi' = Razorpay payment link. */
+export function paymentModeLabel(mode) {
+  const map = { cash: 'Cash', qr: 'QR', upi: 'Payment Link', bank: 'Bank', card: 'Card', credit: 'Credit' }
+  return map[mode] || (mode ? mode.toUpperCase() : '—')
+}
+
 export function cleanPhone(phone) {
   return String(phone || '').replace(/\D/g, '').slice(-10)
 }

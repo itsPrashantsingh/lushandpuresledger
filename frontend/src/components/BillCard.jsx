@@ -1,4 +1,4 @@
-import { formatCurrency, formatPeriod, formatDate, statusBadgeClass, getBillStatus } from '../lib/utils'
+import { formatCurrency, formatPeriod, formatDate, statusBadgeClass, getBillStatus, paymentModeLabel } from '../lib/utils'
 
 export default function BillCard({
   bill,
@@ -43,7 +43,7 @@ export default function BillCard({
         {overdue && <span className="text-red-600 font-medium">Overdue</span>}
         {bill.paid && bill.paid_at && (
           <span className="text-green-600">
-            Paid {formatDate(bill.paid_at.slice(0, 10))} · {bill.payment_mode?.toUpperCase()}
+            Paid {formatDate(bill.paid_at.slice(0, 10))} · {paymentModeLabel(bill.payment_mode)}
           </span>
         )}
       </div>

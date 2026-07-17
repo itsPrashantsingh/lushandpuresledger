@@ -144,7 +144,7 @@ export async function getPaidAmountsForBills(billIds) {
   return map
 }
 
-export async function markCashPayment(bill, amount, customer, paidAt = null) {
+export async function markCashPayment(bill, amount, customer, paidAt = null, mode = 'cash') {
   const numAmount = Number(amount)
   if (!numAmount || numAmount <= 0) throw new Error('Enter a valid amount')
 
@@ -161,7 +161,7 @@ export async function markCashPayment(bill, amount, customer, paidAt = null) {
     bill_id: bill.id,
     customer_id: bill.customer_id,
     amount: applied,
-    mode: 'cash',
+    mode,
     paid_at: paymentTimestamp
   })
   if (payErr) throw payErr
@@ -172,7 +172,7 @@ export async function markCashPayment(bill, amount, customer, paidAt = null) {
       .update({
         paid: true,
         paid_at: paymentTimestamp,
-        payment_mode: paidSoFar > 0 ? bill.payment_mode : 'cash'
+        payment_mode: paidSoFar > 0 ? bill.payment_mode : mode
       })
       .eq('id', bill.id)
     if (billErr) throw billErr

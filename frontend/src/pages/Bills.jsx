@@ -19,7 +19,7 @@ import { shareBillOnWhatsApp } from '../lib/whatsapp'
 import { sendBillViaApi, sendTextViaApi } from '../lib/whatsapp-api'
 import WhatsAppSendQueue from '../components/WhatsAppSendQueue'
 import LoadingOverlay from '../components/LoadingOverlay'
-import { getBillStatus, formatCurrency, whatsappLink, currentYearMonth, formatDate } from '../lib/utils'
+import { getBillStatus, formatCurrency, whatsappLink, currentYearMonth, formatDate, paymentModeLabel } from '../lib/utils'
 import { buildPaymentDueMessage } from '../lib/messages'
 
 export default function Bills() {
@@ -32,7 +32,9 @@ export default function Bills() {
   const [cashModal, setCashModal] = useState(null)
   const [cashAmount, setCashAmount] = useState('')
   const [cashPaidAt, setCashPaidAt] = useState('')
+  const [cashMode, setCashMode] = useState('cash')
   const [savingCash, setSavingCash] = useState(false)
+  const [methodFilter, setMethodFilter] = useState('')
   const [running, setRunning] = useState('')
   const [progress, setProgress] = useState(null)
   const [toast, setToast] = useState({ message: '', type: 'success' })
@@ -154,6 +156,8 @@ export default function Bills() {
     return bills.filter((b) => {
       const status = getBillStatus(b, paidMap[b.id] || 0)
       if (tab !== 'all' && status !== tab) return false
+      // Payment-method filter applies to paid bills only.
+      if (methodFilter && (!b.paid || (b.payment_mode || '') !== methodFilter)) return false
       if (!q) return true
       const name = (b.customers?.name || '').toLowerCase()
       const cid = (b.customers?.customer_id || '').toLowerCase()
@@ -162,17 +166,29 @@ export default function Bills() {
     })
   }
 
+  // Amount collected this month per payment method (paid bills, by bills.payment_mode).
+  function paymentMethodTotals() {
+    const totals = { cash: 0, qr: 0, upi: 0 }
+    for (const b of bills) {
+      if (!b.paid) continue
+      const mode = b.payment_mode || ''
+      if (mode in totals) totals[mode] += Number(b.total_amount)
+    }
+    return totals
+  }
+
   function openCashModal(bill) {
     setCashModal(bill)
     setCashAmount(String(Number(bill.total_amount) - (paidMap[bill.id] || 0)))
     setCashPaidAt(bill.period_end)
+    setCashMode('cash')
   }
 
   async function confirmCashPayment() {
     if (!cashModal || !cashAmount || savingCash) return
     setSavingCash(true)
     try {
-      const { applied } = await markCashPayment(cashModal, cashAmount, cashModal.customers, cashPaidAt)
+      const { applied } = await markCashPayment(cashModal, cashAmount, cashModal.customers, cashPaidAt, cashMode)
       const billId = cashModal.id
       setCashModal(null)
       loadBills()
@@ -338,6 +354,26 @@ export default function Bills() {
         )}
       </div>
 
+      {/* Collected this month, by payment method (paid bills) — click a card to filter */}
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Collected this month {methodFilter && <button onClick={() => setMethodFilter('')} className="ml-2 font-normal normal-case text-green-600 hover:underline">clear filter</button>}</p>
+        <div className="grid grid-cols-3 gap-2">
+          {(() => {
+            const t = paymentMethodTotals()
+            return ['cash', 'qr', 'upi'].map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setMethodFilter(methodFilter === mode ? '' : mode)}
+                className={`rounded-xl border p-3 text-left transition ${methodFilter === mode ? 'border-green-500 bg-green-50 ring-1 ring-green-500' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+              >
+                <p className="text-xs text-slate-500">{paymentModeLabel(mode)}</p>
+                <p className="mt-0.5 text-base font-bold text-slate-800 sm:text-lg">{formatCurrency(t[mode])}</p>
+              </button>
+            ))
+          })()}
+        </div>
+      </div>
+
       <div className="flex flex-wrap items-center gap-2">
         {tabs.map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)} className={`rounded-full px-4 py-1.5 text-sm font-medium ${tab === t.key ? 'bg-green-600 text-white' : 'bg-slate-200 text-slate-600'}`}>
@@ -395,7 +431,20 @@ export default function Bills() {
           <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
             <h2 className="text-lg font-bold">Mark Cash Paid</h2>
             <p className="text-sm text-slate-500">{cashModal.customers?.name} · {cashModal.id}</p>
-            <label className="mt-4 block text-xs text-slate-500">Amount</label>
+            <label className="mt-4 block text-xs text-slate-500">Received via</label>
+            <div className="mt-1 flex gap-2">
+              {[['cash', '💵 Cash'], ['qr', '📱 QR']].map(([val, label]) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setCashMode(val)}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium ${cashMode === val ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-300 text-slate-600'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <label className="mt-3 block text-xs text-slate-500">Amount</label>
             <input type="number" value={cashAmount} onChange={(e) => setCashAmount(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" />
             <label className="mt-3 block text-xs text-slate-500">Payment Date</label>
             <input type="date" value={cashPaidAt} onChange={(e) => setCashPaidAt(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" />

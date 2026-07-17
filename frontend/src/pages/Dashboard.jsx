@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { BarChart, Bar, LineChart, Line, Legend, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { supabase } from '../lib/supabase'
 import StatCard from '../components/StatCard'
 import Toast from '../components/Toast'
@@ -69,6 +69,8 @@ export default function Dashboard() {
   const [cattleKpis, setCattleKpis] = useState({ today: 0, thisMonth: 0, last30: 0, lifetime: 0 })
   const [revenueChart, setRevenueChart] = useState([])
   const [milkChart, setMilkChart] = useState([])
+  const [deliveryMonth, setDeliveryMonth] = useState(currentYearMonth())
+  const [deliveryChart, setDeliveryChart] = useState([])
   const [unpaidBills, setUnpaidBills] = useState([])
   const [recentPayments, setRecentPayments] = useState([])
   const [topPayers, setTopPayers] = useState([])
@@ -106,7 +108,7 @@ export default function Dashboard() {
       supabase.from('cattle_milk_entries').select('total_litres, date, cattle_id'),
       supabase.from('daily_entries').select('total_qty, date'),
       supabase.from('cattle').select('id, name, cattle_id').eq('active', true).order('name'),
-      supabase.from('daily_entries').select('amount, date'),
+      supabase.from('daily_entries').select('amount, morning_qty, evening_qty, date'),
       supabase.from('buttermilk_entries').select('amount, date')
     ])
 
@@ -308,6 +310,27 @@ export default function Dashboard() {
     setMilkChart(days.map((d) => ({ day: d.label, morning: byDate[d.date]?.morning || 0, evening: byDate[d.date]?.evening || 0, total: byDate[d.date]?.total || 0 })))
   }, [milkChartCattle, rawMilkChart30])
 
+  // Daily customer-delivery chart (morning+evening L per day) for the selected month
+  useEffect(() => {
+    const { start, end } = getMonthBounds(deliveryMonth)
+    const [y, m] = deliveryMonth.split('-').map(Number)
+    const daysInMonth = new Date(y, m, 0).getDate()
+    const byDate = {}
+    for (const e of rawMilkDeliveries) {
+      if (e.date < start || e.date > end) continue
+      if (!byDate[e.date]) byDate[e.date] = { morning: 0, evening: 0 }
+      byDate[e.date].morning += Number(e.morning_qty || 0)
+      byDate[e.date].evening += Number(e.evening_qty || 0)
+    }
+    const arr = []
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+      const v = byDate[dateStr] || { morning: 0, evening: 0 }
+      arr.push({ day: String(d), morning: v.morning, evening: v.evening, total: v.morning + v.evening })
+    }
+    setDeliveryChart(arr)
+  }, [deliveryMonth, rawMilkDeliveries])
+
   // Recompute supply vs production whenever range or raw data changes
   useEffect(() => {
     if (!rawCattleEntries.length && !rawDailyEntries.length) return
@@ -369,6 +392,8 @@ export default function Dashboard() {
   function shiftSvp(delta) { const { start, end } = monthRangeFrom(svpFrom || `${currentYearMonth()}-01`, delta); setSvpFrom(start); setSvpTo(end) }
   function svpThisMonth() { const { start, end } = getMonthBounds(currentYearMonth()); setSvpFrom(start); setSvpTo(end) }
   function svpAllTime() { setSvpFrom(''); setSvpTo('') }
+  function shiftDelivery(delta) { const [y, m] = deliveryMonth.split('-').map(Number); const d = new Date(y, m - 1 + delta, 1); setDeliveryMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`) }
+  function deliveryThisMonth() { setDeliveryMonth(currentYearMonth()) }
 
   if (loading) return <div className="py-12 text-center text-slate-500">Loading dashboard...</div>
 
@@ -529,6 +554,31 @@ export default function Dashboard() {
             <p className="text-xs text-amber-600">Utilization</p>
             <p className="mt-1 text-xl font-bold text-amber-800">{supplyVsProduction.utilization}%</p>
           </div>
+        </div>
+      </section>
+
+      {/* ── Daily Deliveries line chart ───────────────────────── */}
+      <section>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Daily Deliveries — Morning + Evening</h2>
+          <RangeShifter from={`${deliveryMonth}-01`} onShift={shiftDelivery} onThisMonth={deliveryThisMonth} />
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <ResponsiveContainer width="100%" height={280}>
+            <LineChart data={deliveryChart} margin={{ top: 6, right: 12, left: -12, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="day" tick={{ fontSize: 10 }} interval={1} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip
+                formatter={(v, name) => [`${Number(v).toFixed(1)} L`, name]}
+                labelFormatter={(d) => `Day ${d} · ${monthLabelOf(`${deliveryMonth}-01`)}`}
+              />
+              <Legend />
+              <Line type="monotone" dataKey="total" stroke="#16a34a" strokeWidth={2.5} name="Total" dot={{ r: 2 }} activeDot={{ r: 5 }} />
+              <Line type="monotone" dataKey="morning" stroke="#3b82f6" strokeWidth={1.5} name="Morning" dot={false} />
+              <Line type="monotone" dataKey="evening" stroke="#8b5cf6" strokeWidth={1.5} name="Evening" dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
       </section>
 
