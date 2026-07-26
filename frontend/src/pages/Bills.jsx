@@ -16,10 +16,10 @@ import {
 } from '../lib/bills'
 import { openBillPdf } from '../lib/pdf'
 import { shareBillOnWhatsApp } from '../lib/whatsapp'
-import { sendBillViaApi, sendTextViaApi } from '../lib/whatsapp-api'
+import { sendBillViaApi, sendTextViaApi, getAutomationConfig } from '../lib/whatsapp-api'
 import WhatsAppSendQueue from '../components/WhatsAppSendQueue'
 import LoadingOverlay from '../components/LoadingOverlay'
-import { getBillStatus, formatCurrency, whatsappLink, currentYearMonth, formatDate, paymentModeLabel } from '../lib/utils'
+import { getBillStatus, formatCurrency, whatsappLink, currentYearMonth, formatDate, paymentModeLabel, todayISO } from '../lib/utils'
 import { buildPaymentDueMessage } from '../lib/messages'
 
 export default function Bills() {
@@ -33,6 +33,8 @@ export default function Bills() {
   const [cashAmount, setCashAmount] = useState('')
   const [cashPaidAt, setCashPaidAt] = useState('')
   const [cashMode, setCashMode] = useState('cash')
+  const [sendAck, setSendAck] = useState(true)
+  const [ackDefault, setAckDefault] = useState(true)
   const [savingCash, setSavingCash] = useState(false)
   const [methodFilter, setMethodFilter] = useState('')
   const [running, setRunning] = useState('')
@@ -43,6 +45,12 @@ export default function Bills() {
   const [syncingBillId, setSyncingBillId] = useState('')
 
   useEffect(() => { loadBills() }, [month])
+
+  useEffect(() => {
+    getAutomationConfig()
+      .then((config) => setAckDefault(config?.cash_ack_enabled !== false))
+      .catch(() => {})
+  }, [])
 
   async function autoReconcile() {
     try {
@@ -182,6 +190,7 @@ export default function Bills() {
     setCashAmount(String(Number(bill.total_amount) - (paidMap[bill.id] || 0)))
     setCashPaidAt(bill.period_end)
     setCashMode('cash')
+    setSendAck(ackDefault)
   }
 
   async function confirmCashPayment() {
@@ -190,8 +199,13 @@ export default function Bills() {
     try {
       const { applied } = await markCashPayment(cashModal, cashAmount, cashModal.customers, cashPaidAt, cashMode)
       const billId = cashModal.id
+      const shouldAck = sendAck
       setCashModal(null)
       loadBills()
+      if (!shouldAck) {
+        setToast({ message: 'Cash recorded (no WhatsApp ack sent)', type: 'success' })
+        return
+      }
       // API-only acknowledgement — always surface the result, never silently swallow it.
       try {
         const res = await sendTextViaApi('cash_received', billId, { amount: applied })
@@ -448,6 +462,13 @@ export default function Bills() {
             <input type="number" value={cashAmount} onChange={(e) => setCashAmount(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" />
             <label className="mt-3 block text-xs text-slate-500">Payment Date</label>
             <input type="date" value={cashPaidAt} onChange={(e) => setCashPaidAt(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" />
+            <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
+              <input type="checkbox" checked={sendAck} onChange={(e) => setSendAck(e.target.checked)} className="rounded" />
+              Send WhatsApp acknowledgement
+            </label>
+            {cashPaidAt && cashPaidAt < todayISO() && sendAck && (
+              <p className="mt-1 text-xs text-amber-600">This is a backdated payment — uncheck above to avoid a "just paid" notification for an old entry.</p>
+            )}
             <div className="mt-4 flex gap-2">
               <button onClick={confirmCashPayment} disabled={savingCash} className="flex-1 rounded-lg bg-green-600 py-2 text-white disabled:opacity-50">{savingCash ? 'Saving…' : 'Confirm'}</button>
               <button onClick={() => setCashModal(null)} disabled={savingCash} className="flex-1 rounded-lg border py-2 disabled:opacity-50">Cancel</button>

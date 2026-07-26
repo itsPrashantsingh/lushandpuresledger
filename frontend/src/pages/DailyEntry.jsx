@@ -197,32 +197,33 @@ export default function DailyEntry() {
   }
 
   const filtered = customers.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
-  const activeList = filtered.filter((c) => c.active !== false)
+  const activeList = filtered.filter((c) => c.active !== false)   // search-filtered, for rendering
   const inactiveList = filtered.filter((c) => c.active === false)
   const isLocked = session.status !== 'unlocked'
   const isFinalized = session.status === 'finalized'
   const statusText = isFinalized ? 'Final saved' : isLocked ? 'Locked' : 'Unlocked'
   const statusClass = isFinalized ? 'bg-blue-100 text-blue-700' : isLocked ? 'bg-slate-800 text-white' : 'bg-amber-100 text-amber-800'
-  const totalDelivered = customers.reduce((s, c) => {
-    const e = entries[c.id]
-    if (!e?.delivered) return s
-    return s + Number(e.morning_qty) + Number(e.evening_qty)
-  }, 0)
-  const totalAmount = customers.reduce((s, c) => {
-    const e = entries[c.id]
-    if (!e?.delivered) return s
-    return s + (Number(e.morning_qty) + Number(e.evening_qty)) * Number(e.rate)
-  }, 0)
-  const buttermilkSubscribers = customers.filter((c) => c.buttermilk_required && c.active !== false).length
-  const customCount = customers.reduce((sum, customer) => {
-    const e = entries[customer.id]
-    if (!e) return sum
-    const changed = e.delivered === false ||
-      Number(e.morning_qty) !== Number(customer.morning_qty) ||
-      Number(e.evening_qty) !== Number(customer.evening_qty) ||
-      Number(e.rate) !== Number(customer.rate)
-    return sum + (changed ? 1 : 0)
-  }, 0)
+
+  // Summary stats: computed over ACTIVE customers only (paused are never billed, handled in
+  // their own section) and INDEPENDENT of the search box, so totals reflect the whole day.
+  const statRows = customers
+    .filter((c) => c.active !== false)
+    .map((c) => ({ c, e: entries[c.id] || {} }))
+  const isRowDelivered = (e) => e.delivered && (Number(e.morning_qty) + Number(e.evening_qty)) > 0
+  const deliveredRows = statRows.filter(({ e }) => isRowDelivered(e))
+  const totalDelivered = deliveredRows.reduce((s, { e }) => s + Number(e.morning_qty) + Number(e.evening_qty), 0)
+  const totalAmount = deliveredRows.reduce((s, { e }) => s + (Number(e.morning_qty) + Number(e.evening_qty)) * Number(e.rate), 0)
+  const deliveredCount = deliveredRows.length
+  const skippedCount = statRows.length - deliveredCount
+  // "custom" = a delivered customer whose qty/rate differs from their saved default (skips/pauses excluded)
+  const customCount = statRows.filter(({ c, e }) => isRowDelivered(e) && (
+    Number(e.morning_qty) !== Number(c.morning_qty) ||
+    Number(e.evening_qty) !== Number(c.evening_qty) ||
+    Number(e.rate) !== Number(c.rate)
+  )).length
+  const activeCount = statRows.length
+  const pausedCount = customers.filter((c) => c.active === false).length
+  const buttermilkSubscribers = statRows.filter(({ c }) => c.buttermilk_required).length
 
   return (
     <div className="pb-36">
@@ -261,8 +262,12 @@ export default function DailyEntry() {
       />
 
       <div className="mb-3 rounded-lg bg-green-600 px-3 py-2 text-center text-sm font-medium text-white">
-        {totalDelivered.toFixed(1)} L planned · {formatCurrency(totalAmount)} · {customCount} custom · {activeList.length} customers
-        {buttermilkSubscribers > 0 && ` · ${buttermilkSubscribers} buttermilk`}
+        {totalDelivered.toFixed(1)} L planned · {formatCurrency(totalAmount)}
+        <span className="block text-xs font-normal text-green-50">
+          {deliveredCount} delivering · {skippedCount} skipped · {customCount} custom · {activeCount} active
+          {buttermilkSubscribers > 0 && ` · ${buttermilkSubscribers} buttermilk`}
+          {pausedCount > 0 && ` · ${pausedCount} paused`}
+        </span>
       </div>
 
       {loading && <p className="rounded-lg border border-slate-200 bg-white p-4 text-center text-sm text-slate-500">Loading deliveries...</p>}

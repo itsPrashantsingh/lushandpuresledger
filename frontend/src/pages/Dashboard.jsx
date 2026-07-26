@@ -354,6 +354,11 @@ export default function Dashboard() {
     try {
       const { applied } = await markCashPayment(bill, amount, bill.customers, bill.period_end)
       loadDashboard()
+      const shouldAck = confirm('Send a WhatsApp payment-received acknowledgement to the customer?')
+      if (!shouldAck) {
+        setToast({ message: 'Cash recorded (no WhatsApp ack sent)', type: 'success' })
+        return
+      }
       // API-only acknowledgement — always surface the result, never silently swallow it.
       try {
         const res = await sendTextViaApi('cash_received', bill.id, { amount: applied })

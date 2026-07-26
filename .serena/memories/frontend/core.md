@@ -23,6 +23,13 @@ React 19 SPA, Vite, Tailwind v4. Entry `main.jsx` → `App.jsx`.
   **per-method collected totals** (Cash / QR / Payment Link) for the month's paid bills as
   clickable filter cards. Payment modes rendered via `utils.paymentModeLabel` (upi → "Payment
   Link"). `bills.payment_mode`/`payments.mode` are free-text — no migration needed for 'qr'.
+  Mark-cash modal also has a **"Send WhatsApp acknowledgement" checkbox** (default seeded from
+  `automation_config.cash_ack_enabled` via `getAutomationConfig()`, overridable per payment) —
+  shows an amber hint when the payment date is backdated. Dashboard's quick "Mark Paid" instead
+  uses a `window.confirm()` before sending the ack (lighter-weight, matches its prompt()-based
+  flow). **Important:** `cash_ack_enabled` in the Automation tab was previously a dead toggle —
+  it was stored but never actually checked before sending; this is the only place it's now read
+  (as a UI default, not a hard gate — the user can still override per-payment).
 - `Sales` — direct product-sale invoices (`product_sales`); supports `credit` payment_mode (`paid=false`) + "Mark Paid".
 - `Expenses` (categories from `expense_categories`), `Inventory` (items/categories, tracks `current_quantity` vs `in_use_quantity`), `Reminders`, `ImportExport`, `ActivityLogs` (reads backend `/api/logs`), `Settings` (edits localStorage dairy settings), `PaymentSuccess` (Razorpay redirect landing).
 
