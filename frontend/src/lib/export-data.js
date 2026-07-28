@@ -85,12 +85,15 @@ export async function exportCustomerList(format = 'xlsx') {
 export async function exportMonthlyBillStatus(month, format = 'xlsx') {
   const { start, end } = getMonthBounds(month)
 
+  // Not filtered by active — a customer paused mid-month can still have a bill or
+  // delivery entries for this period, and must not silently disappear from the export
+  // (same fix as billing/daily-entry: eligibility comes from actual data, not the flag).
   const [
-    { data: customers, error: custErr },
+    { data: allCustomers, error: custErr },
     { data: allEntries },
     { data: allBills }
   ] = await Promise.all([
-    supabase.from('customers').select('*').eq('active', true).order('name'),
+    supabase.from('customers').select('*'),
     supabase.from('daily_entries').select('customer_id, total_qty, amount').gte('date', start).lte('date', end),
     supabase.from('bills').select('*').gte('period_start', start).lte('period_end', end)
   ])
@@ -101,6 +104,9 @@ export async function exportMonthlyBillStatus(month, format = 'xlsx') {
   const { data: allPayments } = billIds.length
     ? await supabase.from('payments').select('bill_id, amount').in('bill_id', billIds)
     : { data: [] }
+
+  const customerById = {}
+  for (const c of allCustomers || []) customerById[c.id] = c
 
   const entriesByCustomer = {}
   for (const e of allEntries || []) {
@@ -116,12 +122,17 @@ export async function exportMonthlyBillStatus(month, format = 'xlsx') {
     paidByBill[p.bill_id] = (paidByBill[p.bill_id] || 0) + Number(p.amount)
   }
 
-  const rows = (customers || []).map((c) => {
-    const entries = entriesByCustomer[c.id] || []
+  // One row per customer who has a bill OR a delivery entry this period — this is the
+  // union that matches what the Bills tab shows, regardless of current active/paused status.
+  const relevantCustomerIds = new Set([...Object.keys(billsByCustomer), ...Object.keys(entriesByCustomer)])
+
+  const rows = [...relevantCustomerIds].map((customerId) => {
+    const c = customerById[customerId]
+    const entries = entriesByCustomer[customerId] || []
     const totalLitres = entries.reduce((s, e) => s + Number(e.total_qty), 0)
     const totalAmount = entries.reduce((s, e) => s + Number(e.amount), 0)
 
-    const bill = billsByCustomer[c.id]
+    const bill = billsByCustomer[customerId]
     let billId = ''
     let paidAmount = 0
     let status = totalAmount > 0 ? 'no_bill' : 'no_delivery'
@@ -140,10 +151,11 @@ export async function exportMonthlyBillStatus(month, format = 'xlsx') {
 
     const balance = totalBillAmount - paidAmount
     return {
-      customer_id: c.customer_id || '',
-      customer_name: c.name,
-      whatsapp_no: c.whatsapp_no,
+      customer_id: c?.customer_id || '',
+      customer_name: c?.name || '(deleted customer)',
+      whatsapp_no: c?.whatsapp_no || '',
       month,
+      customer_status: c?.active !== false ? 'active' : 'paused',
       milk_litres: totalLitres.toFixed(1),
       milk_amount: totalAmount,
       buttermilk_litres: buttermilkLitres,
@@ -153,9 +165,9 @@ export async function exportMonthlyBillStatus(month, format = 'xlsx') {
       paid_amount: paidAmount,
       balance_due: balance > 0 ? balance : 0,
       status,
-      milk_rate: Number(c.rate)
+      milk_rate: Number(c?.rate || 0)
     }
-  })
+  }).sort((a, b) => a.customer_name.localeCompare(b.customer_name))
 
   const filename = `bill_status_${month}.${format === 'csv' ? 'csv' : 'xlsx'}`
   if (format === 'csv') downloadCsv(filename, rows)

@@ -42,9 +42,22 @@ React 19 SPA, Vite, Tailwind v4. Entry `main.jsx` → `App.jsx`.
 - `bills.js` — `createBill`, `generateBillId` (rpc), `createRazorpayLink`, `confirmRazorpayPayment`, `markCashPayment`, `getPaidAmountForBill(s)`, `generateAllMonthlyBills`, `getMonthlyBillPackages`, `loadCustomerMonthStats`, `ensureRazorpayForUnpaidBills`, `reconcileRazorpayPayments`, `wakeBackend`.
 - `gst.js` — `calculateGst(subtotal)` → {subtotal,cgst,sgst,igst,gstRate,grandTotal}; `amountInWords`.
 - `messages.js` — WhatsApp templates (`buildBillWhatsAppMessage`, `buildReminderMessage`, `buildProductSaleWhatsAppMessage`, etc.) + `MESSAGE_*` constants/placeholders.
-- `whatsapp.js` — `shareBillOnWhatsApp`, `shareProductSaleOnWhatsApp`, `sendReminderWhatsApp`, `validatePhone` (opens wa.me links).
+- `whatsapp.js` — `shareBillOnWhatsApp`, `shareProductSaleOnWhatsApp`, `sendReminderWhatsApp`,
+  `validatePhone`. All "Manual" fallback buttons route through here → always `window.open(wa.me
+  link)`, never `navigator.share`. (2026-07 fix: the two file-attach functions used to try
+  `navigator.share({files})` first on devices where `canShare` returns true — but the OS share
+  sheet cannot target a specific WhatsApp contact, forcing the user to manually pick the chat,
+  which is exactly the "Manual" button's one job to avoid. Removed that branch entirely; PDF is
+  now always downloaded + the correct chat opened via `wa.me`, attach is a manual step.)
 - `pdf.js` — jsPDF bill generation (`generateBill`, `openBillPdf`, `downloadBillPdf`, `generateProductSaleBill`, ...).
 - `import-export.js` — xlsx/CSV customer & cattle import (field matching, templates). `export-data.js` — xlsx exporters (deliveries, production, customer list, monthly bill status, sales, buttermilk).
+  `exportMonthlyBillStatus` (2026-07 fix): was built from `customers.eq('active', true)` only —
+  same root bug as billing/daily-entry, so a paused customer's bill/entries for the period were
+  silently dropped from the export while still showing in the Bills tab (which queries `bills`
+  directly with no active filter), causing a real mismatch the user caught. Rewritten to build
+  rows from the UNION of customer IDs present in `bills` OR `daily_entries` for the period
+  (regardless of active), joined back to `customers` for display — matches the Bills tab's
+  result set. Added a `customer_status` column ('active'|'paused') to the export for visibility.
 
 ## Components (`components/`)
 `Navbar`, `ProtectedRoute`, `Toast`, `LoadingOverlay`, `StatCard`, `BillCard`, `CustomerCard`, `CattleCard`, `QtyControl` (qty stepper, rounds input), `WhatsAppSendQueue` (batch WhatsApp send UI).

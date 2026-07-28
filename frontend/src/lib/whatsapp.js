@@ -9,31 +9,18 @@ function validatePhone(customer) {
 }
 
 /**
- * Share bill on WhatsApp.
- * Mobile: native share sheet attaches PDF automatically.
- * Desktop: downloads PDF + opens WhatsApp (user attaches manually).
+ * Share bill on WhatsApp — always via wa.me, targeting the customer's exact chat.
+ * Downloads the PDF; the user attaches it manually in the chat that opens.
  */
 export async function shareBillOnWhatsApp(customer, entries, bill, razorpayUrl) {
   validatePhone(customer)
   const message = buildBillWhatsAppMessage(customer, bill, razorpayUrl)
   const doc = generateBill(customer, entries, bill)
   const filename = `${bill.id}-${customer.name.replace(/\s+/g, '_')}.pdf`
-  const blob = doc.output('blob')
-  const file = new File([blob], filename, { type: 'application/pdf' })
 
-  if (navigator.share && navigator.canShare?.({ files: [file] })) {
-    try {
-      await navigator.share({
-        title: `Bill ${bill.id}`,
-        text: message,
-        files: [file]
-      })
-      return { method: 'share', success: true, attached: true }
-    } catch (err) {
-      if (err.name === 'AbortError') return { method: 'share', success: false, cancelled: true }
-    }
-  }
-
+  // Always open the customer's exact WhatsApp chat via wa.me — the OS share sheet
+  // (navigator.share with files) cannot target a specific contact, so using it here
+  // would force manually picking the chat, defeating the point of this fallback.
   doc.save(filename)
   window.open(whatsappLink(customer.whatsapp_no, message), '_blank')
   return { method: 'download', success: true, attached: false }
@@ -51,22 +38,8 @@ export async function shareProductSaleOnWhatsApp(sale) {
   const message = buildProductSaleWhatsAppMessage(sale)
   const doc = generateProductSaleBill(sale)
   const filename = `${sale.invoice_no}-${sale.buyer_name.replace(/\s+/g, '_')}.pdf`
-  const blob = doc.output('blob')
-  const file = new File([blob], filename, { type: 'application/pdf' })
 
-  if (navigator.share && navigator.canShare?.({ files: [file] })) {
-    try {
-      await navigator.share({
-        title: `Bill ${sale.invoice_no}`,
-        text: message,
-        files: [file]
-      })
-      return { method: 'share', success: true, attached: true }
-    } catch (err) {
-      if (err.name === 'AbortError') return { method: 'share', success: false, cancelled: true }
-    }
-  }
-
+  // Always open the customer's exact WhatsApp chat via wa.me — see shareBillOnWhatsApp.
   doc.save(filename)
   window.open(whatsappLink(phone, message), '_blank')
   return { method: 'download', success: true, attached: false }
