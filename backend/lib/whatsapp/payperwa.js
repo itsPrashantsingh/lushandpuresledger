@@ -25,6 +25,23 @@ function headers() {
 }
 
 /**
+ * Build an actionable error string from a PayPerWA/Meta error response.
+ * PayPerWA's top-level `error` is a generic wrapper (e.g. "WhatsApp API error") — the
+ * real reason (Meta error code + details) lives nested under `details.error`. Surface
+ * both so the Automation tab's failures panel shows the specific cause, not just the
+ * generic label.
+ */
+function describeError(json, status) {
+  const top = json?.error || `HTTP ${status}`
+  const metaErr = json?.details?.error
+  if (!metaErr) return top
+
+  const code = metaErr.code ? `#${metaErr.code} ` : ''
+  const detail = metaErr.error_data?.details || metaErr.message || ''
+  return detail ? `${top}: ${code}${detail}` : top
+}
+
+/**
  * Send an approved template message.
  * @returns {Promise<{ok, wamid, status, cost, error, invalid}>}
  */
@@ -65,7 +82,7 @@ async function sendTemplate({ to, templateName, language = 'en', variables = [],
   }
 
   if (!res.ok || json?.success === false) {
-    const error = json?.error || `HTTP ${res.status}`
+    const error = describeError(json, res.status)
     // 400 on a bad/non-WhatsApp number → surface as invalid_number
     const invalid = res.status === 400 && /phone|number|recipient|not.*whatsapp/i.test(error)
     return { ok: false, status: invalid ? 'invalid_number' : 'failed', invalid, error }

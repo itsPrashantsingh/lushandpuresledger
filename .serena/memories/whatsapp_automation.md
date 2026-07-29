@@ -31,6 +31,43 @@ templates with a public PDF URL** (PDF hosted in Supabase Storage `bill-pdfs`).
   from {month}") every `carryforward_interval_days` (default 7) with that bill's own pay link,
   until paid. Config `carryforward_enabled`/`carryforward_interval_days` (migration 015).
 
+## Live diagnosis session (2026-07, PayPerWA account: Lush & Pures, +91 92867 91174)
+- **Root cause of "WhatsApp API error" on ALL sends (fixed):** the Meta Business Manager had
+  TWO WABAs — templates were approved on a WABA with no phone number attached, while PayPerWA's
+  channel was bound to the numbered WABA. Fix was recreating all 8 templates directly on the
+  correct (numbered) WABA. Confirmed via direct `POST /messages/send` test calls bypassing our
+  app entirely (see below) — Meta returned error **132001** "Template name does not exist in the
+  translation" consistently across templates/locales until this was fixed. All 8 non-document
+  templates now send successfully.
+- **Still broken: Document-header templates (`bill`, `product_sale`) fail with Meta error
+  132012** — `"header: Format mismatch, expected DOCUMENT, received UNKNOWN"`. Tested TWO
+  structurally different request shapes for the header/PDF, both produced the **identical**
+  error: (a) our original flat `document_url`/`document_filename` fields, and (b) Meta's own
+  native `components: [{type:'header', parameters:[{type:'document', document:{link, filename}}]}]`
+  format. Since both fail identically, PayPerWA is almost certainly not recognizing either as
+  valid header input — **the correct field/parameter name for attaching a document to a
+  Document-header template via PayPerWA's API was never found and is not in their public docs**
+  (confirmed by re-reading their docs page — only `to/template_name/language/variables` are
+  documented for `POST /messages/send`, no media/header field at all). **This needs a direct
+  answer from PayPerWA support**, not more guessing — ask them the exact field name/shape for a
+  document header. Until resolved, `bill` and `product_sale` sends will keep failing while every
+  other (non-document) template works fine.
+- **Diagnostic method used throughout:** hit `https://payperwa.com/api/v1/{balance,templates,
+  messages/send}` directly with `fetch()` in a `node -e` one-liner from `backend/`, sourcing
+  `PAYPERWA_API_KEY` from `.env` via `dotenv` — bypasses our app entirely, shows PayPerWA/Meta's
+  raw JSON response including `fbtrace_id` (proves the call reached Meta live, not cached).
+  Reuse this method for any future "why is X failing" question before guessing from code alone.
+
+## Error-message fix — `payperwa.js` now surfaces the REAL reason (2026-07)
+Previously `sendTemplate`'s error extraction only kept PayPerWA's generic top-level `error`
+field (always "WhatsApp API error" — a wrapper label), discarding the actually useful nested
+`details.error.message` / `details.error.error_data.details` / `details.error.code` that Meta
+provides. Added `describeError(json, status)` in `payperwa.js` that builds a combined string,
+e.g. `"WhatsApp API error: #132012 header: Format mismatch, expected DOCUMENT, received UNKNOWN"`.
+This flows through unchanged to `whatsapp_messages.error`, the Automation tab's failures panel,
+and every send toast — **no more manual curl-diagnosis needed for future failures**, the specific
+Meta reason is now visible directly in the app.
+
 ## Cron auth & trigger mechanism
 `POST /api/whatsapp/cron` is gated by `CRON_SECRET` env var (falls back to `API_KEY` if unset —
 kept as a SEPARATE secret on purpose so the Razorpay-route `API_KEY` guard doesn't leak onto the
