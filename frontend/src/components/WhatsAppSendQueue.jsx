@@ -102,10 +102,8 @@ export default function WhatsAppSendQueue({ packages, onClose, onComplete }) {
         )}
 
         <div className="mt-4 rounded-lg bg-blue-50 p-3 text-sm text-blue-900">
-          <p className="font-medium">📱 On phone:</p>
-          <p>Tap Send — PDF attaches automatically via share sheet.</p>
-          <p className="mt-2 font-medium">💻 On computer:</p>
-          <p>PDF downloads → attach it in the WhatsApp chat that opens.</p>
+          <p className="font-medium">📱 Manual send:</p>
+          <p>Tap Send — the PDF downloads and WhatsApp opens to the right chat with your message. Attach the downloaded PDF there.</p>
         </div>
 
         <div className="mt-5 flex gap-2">

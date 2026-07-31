@@ -39,19 +39,28 @@ templates with a public PDF URL** (PDF hosted in Supabase Storage `bill-pdfs`).
   app entirely (see below) — Meta returned error **132001** "Template name does not exist in the
   translation" consistently across templates/locales until this was fixed. All 8 non-document
   templates now send successfully.
-- **Still broken: Document-header templates (`bill`, `product_sale`) fail with Meta error
-  132012** — `"header: Format mismatch, expected DOCUMENT, received UNKNOWN"`. Tested TWO
-  structurally different request shapes for the header/PDF, both produced the **identical**
-  error: (a) our original flat `document_url`/`document_filename` fields, and (b) Meta's own
-  native `components: [{type:'header', parameters:[{type:'document', document:{link, filename}}]}]`
-  format. Since both fail identically, PayPerWA is almost certainly not recognizing either as
-  valid header input — **the correct field/parameter name for attaching a document to a
-  Document-header template via PayPerWA's API was never found and is not in their public docs**
-  (confirmed by re-reading their docs page — only `to/template_name/language/variables` are
-  documented for `POST /messages/send`, no media/header field at all). **This needs a direct
-  answer from PayPerWA support**, not more guessing — ask them the exact field name/shape for a
-  document header. Until resolved, `bill` and `product_sale` sends will keep failing while every
-  other (non-document) template works fine.
+- **STILL OPEN, NOT worked around (2026-07): document-header attachment on `bill`/`product_sale`
+  fails via PayPerWA.** Tried THREE structurally different request shapes, all returned the
+  identical Meta error 132012 `"header: Format mismatch, expected DOCUMENT, received UNKNOWN"`:
+  (a) flat `document_url`/`document_filename` fields (the current/reverted-to code), (b) Meta's
+  own native `components:[{type:'header', parameters:[{type:'document', document:{link,
+  filename}}]}]` (confirmed correct against Meta's official docs), and (c) a flat
+  `header:{type:'document', document:{link,filename}}` object. PayPerWA's own public docs never
+  document a header/media field for `POST /messages/send` at all.
+  A link-based workaround (`hasDocument:false` + PDF link as a body variable) was tried and
+  built, then **explicitly rejected by the user** ("I want the bill attached, not another link")
+  and **fully reverted** — `templates.js` REGISTRY and the 3 toast-copy call sites
+  (`Bills.jsx handleSendBill`, `CustomerDetail.jsx handleSendWhatsApp`,
+  `WhatsAppSendQueue.jsx`) are back to the original `hasDocument:true`, 4-variable, "PDF
+  attached" copy — i.e. back to the state that produces the 132012 error, by design, so nothing
+  is silently degraded while a real fix is pursued.
+  **Next step in progress:** testing a **direct-to-Meta-Graph-API send** (bypassing PayPerWA
+  entirely) using the `meta-cloud.js` adapter, to prove/disprove whether this is 100% a PayPerWA
+  bug. Requires a Meta System User access token (`whatsapp_business_messaging` permission) for
+  WABA `236332...1269` — user was asked to generate one via Business Settings → System Users.
+  If direct-Meta send succeeds, PayPerWA's send layer is confirmed broken for document headers
+  and either (a) PayPerWA needs to fix it, or (b) migrate bill/sale sending specifically to
+  direct Meta Cloud API.
 - **Diagnostic method used throughout:** hit `https://payperwa.com/api/v1/{balance,templates,
   messages/send}` directly with `fetch()` in a `node -e` one-liner from `backend/`, sourcing
   `PAYPERWA_API_KEY` from `.env` via `dotenv` — bypasses our app entirely, shows PayPerWA/Meta's

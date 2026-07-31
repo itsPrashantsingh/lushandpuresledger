@@ -10,7 +10,23 @@ React 19 SPA, Vite, Tailwind v4. Entry `main.jsx` → `App.jsx`.
 ## Pages (`pages/`) — each is a self-contained component fetching its own data via `supabase`
 - `Dashboard` — KPIs, revenue/profit (date-range picker + `RangeShifter` month ◀▶), production
   charts (recharts), P&L, dues. Product sales counted in revenue/cash only when `paid=true`.
-  Has a **daily-deliveries line chart** (recharts `LineChart`, morning/evening/total L per day of
+  **Section order (2026-07 restructure, deliberate):** Revenue & Profit → Daily Deliveries →
+  Business Health → Production Analytics → Supply vs Production → Trends (Revenue-vs-Expenses +
+  Milk-Production charts) → Payment Intelligence (Top Payers + Overdue) → Unpaid Bills → Recent
+  Payments. Every section uses ONE consistent header style —
+  `text-sm font-semibold uppercase tracking-wide text-slate-400` inside a bare `<section>` (no
+  outer card border on the section itself) — this replaced a prior inconsistency where the first
+  5 sections used this small-caps label while Trends/Payment Intelligence/Unpaid Bills/Recent
+  Payments used a bigger bold `font-semibold text-slate-700` header instead. Unpaid Bills/Recent
+  Payments had their old inner duplicate header removed (the outer section label now covers it);
+  Trends/Payment Intelligence keep their per-card sub-titles since each card needs a distinct
+  label. Keep new Dashboard sections consistent with this pattern.
+  Daily-deliveries section has a **📈 Chart / 🗓️ Calendar toggle** (`deliveryView` state). The
+  calendar (`DeliveryCalendar` component, top of Dashboard.jsx) is a month heat-map: green shade
+  scales with litres, dashed-grey = no final save that day, tooltip shows litres/amount/customers,
+  footer shows "N/M days saved" + month totals + legend. `finalSaved` is inferred from the
+  presence of `daily_entries` rows, which is reliable because ONLY the `/finalize` endpoint
+  writes that table. Has a **daily-deliveries line chart** (recharts `LineChart`, morning/evening/total L per day of
   a month, `RangeShifter` month nav) fed by `daily_entries` (morning_qty/evening_qty/date) —
   reuses the `rawMilkDeliveries` fetch (extended to select morning/evening) filtered client-side.
 - `Cattle` / `CattleDetail` — cattle master + per-cattle daily milk (`cattle_milk_entries`).

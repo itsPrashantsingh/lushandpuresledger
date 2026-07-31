@@ -70,9 +70,13 @@ async function loadDeliveryState(date) {
 
   const entries = customers.map((customer) => {
     const source = preferFinal ? finalByCustomer.get(customer.id) : draftByCustomer.get(customer.id) || finalByCustomer.get(customer.id)
+    // A customer created AFTER this delivery date could not have received milk then —
+    // never pre-fill them with default quantities on a historical date (see
+    // seedDraftsIfNeeded for the full rationale).
+    const existedOnDate = !customer.created_at || customer.created_at.slice(0, 10) <= date
     // No draft/final yet: default to delivered for active customers, auto-skipped for
     // inactive ones — no manual daily "Skip" click needed while a customer is paused.
-    const defaultDelivered = customer.active !== false
+    const defaultDelivered = customer.active !== false && existedOnDate
     const delivered = source
       ? source.delivered !== false && (Number(source.morning_qty) > 0 || Number(source.evening_qty) > 0)
       : defaultDelivered
@@ -118,9 +122,14 @@ async function seedDraftsIfNeeded(date, user) {
 
   const rows = customers.map((customer) => {
     const final = finalByCustomer.get(customer.id)
+    // A customer created AFTER this delivery date could not have received milk then.
+    // Without this guard, unlocking an old date seeds every currently-active customer
+    // with their default quantities, and Save Final commits them as real historical
+    // deliveries — inventing revenue for customers who did not yet exist.
+    const existedOnDate = !customer.created_at || customer.created_at.slice(0, 10) <= date
     // Inactive customers with no existing final entry seed as skipped (0/0) — a paused
     // customer should never be auto-delivered just because unlock ran for a new day.
-    const useDefault = Boolean(final) || customer.active !== false
+    const useDefault = Boolean(final) || (customer.active !== false && existedOnDate)
     const morning = final ? Number(final.morning_qty) : (useDefault ? Number(customer.morning_qty) : 0)
     const evening = final ? Number(final.evening_qty) : (useDefault ? Number(customer.evening_qty) : 0)
     return {

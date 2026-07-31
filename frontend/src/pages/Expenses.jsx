@@ -14,6 +14,7 @@ export default function Expenses() {
   const [showCatModal, setShowCatModal] = useState(false)
   const [catForm, setCatForm] = useState({ name: '' })
   const [editingCat, setEditingCat] = useState(null)
+  const [catFilter, setCatFilter] = useState([])
 
   useEffect(() => { loadCategories() }, [])
   useEffect(() => { loadExpenses() }, [month])
@@ -98,12 +99,27 @@ export default function Expenses() {
 
   const monthTotal = expenses.reduce((s, e) => s + Number(e.amount), 0)
 
-  const categoryData = categories
+  // Multi-select category filter (OR'd). Empty = show everything.
+  const visibleExpenses = catFilter.length
+    ? expenses.filter((e) => catFilter.includes(e.category))
+    : expenses
+  const filteredTotal = visibleExpenses.reduce((s, e) => s + Number(e.amount), 0)
+
+  function toggleCat(name) {
+    setCatFilter((prev) => prev.includes(name) ? prev.filter((c) => c !== name) : [...prev, name])
+  }
+
+  const categoryTotals = categories
     .map((cat) => ({
       name: cat.name,
       value: expenses.filter((e) => e.category === cat.name).reduce((s, e) => s + Number(e.amount), 0)
     }))
     .filter((d) => d.value > 0)
+
+  // Pie reflects the active filter so chart and list always agree.
+  const categoryData = catFilter.length
+    ? categoryTotals.filter((d) => catFilter.includes(d.name))
+    : categoryTotals
 
   return (
     <div className="space-y-6">
@@ -126,9 +142,43 @@ export default function Expenses() {
       </div>
 
       <div className="rounded-xl border border-red-200 bg-red-50 p-4">
-        <p className="text-sm text-red-600">Monthly Total</p>
-        <p className="text-3xl font-bold text-red-700">{formatCurrency(monthTotal)}</p>
+        <p className="text-sm text-red-600">
+          {catFilter.length ? `Selected (${catFilter.length} categor${catFilter.length === 1 ? 'y' : 'ies'})` : 'Monthly Total'}
+        </p>
+        <p className="text-3xl font-bold text-red-700">{formatCurrency(filteredTotal)}</p>
+        {catFilter.length > 0 && (
+          <p className="mt-1 text-xs text-red-500">of {formatCurrency(monthTotal)} total this month</p>
+        )}
       </div>
+
+      {categoryTotals.length > 0 && (
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Filter by category
+            {catFilter.length > 0 && (
+              <button onClick={() => setCatFilter([])} className="ml-2 font-normal normal-case text-green-600 hover:underline">
+                clear ({catFilter.length})
+              </button>
+            )}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {categoryTotals.map((c) => {
+              const on = catFilter.includes(c.name)
+              return (
+                <button
+                  key={c.name}
+                  onClick={() => toggleCat(c.name)}
+                  className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition ${on ? 'border-green-500 bg-green-50 text-green-800 ring-1 ring-green-500' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'}`}
+                >
+                  <span className={`inline-block h-3 w-3 shrink-0 rounded border ${on ? 'border-green-600 bg-green-600' : 'border-slate-300'}`} />
+                  <span className="font-medium">{c.name}</span>
+                  <span className="text-xs text-slate-500">{formatCurrency(c.value)}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="rounded-xl border border-slate-200 bg-white p-4">
         <h2 className="mb-3 font-semibold">Add Expense</h2>
@@ -169,8 +219,10 @@ export default function Expenses() {
         <h2 className="mb-3 font-semibold">Expenses List</h2>
         {loading ? (
           <p className="text-sm text-slate-500">Loading...</p>
-        ) : expenses.length === 0 ? (
-          <p className="text-sm text-slate-500">No expenses this month.</p>
+        ) : visibleExpenses.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            {catFilter.length ? 'No expenses in the selected categories.' : 'No expenses this month.'}
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -184,7 +236,7 @@ export default function Expenses() {
                 </tr>
               </thead>
               <tbody>
-                {expenses.map((e) => (
+                {visibleExpenses.map((e) => (
                   <tr key={e.id} className="border-b border-slate-100">
                     <td className="py-3 pr-4">{e.date}</td>
                     <td className="py-3 pr-4">{e.category}</td>

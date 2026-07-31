@@ -29,7 +29,12 @@ function verifyCallbackSignature(params) {
 }
 
 async function fetchPaymentIdFromLink(link) {
-  if (link.payments?.[0]) return link.payments[0]
+  // Razorpay returns link.payments as an array of OBJECTS
+  // ({ payment_id, amount, status, method, created_at }) — not bare id strings.
+  // Returning the object stored a JSON blob in payments.razorpay_payment_id, which
+  // silently broke duplicate detection (the .eq() lookup could never match a real id).
+  const first = link.payments?.[0]
+  if (first) return typeof first === 'string' ? first : (first.payment_id || first.id || null)
   try {
     const payments = await razorpay.paymentLink.fetchAllPayments(link.id)
     return payments?.items?.[0]?.id || null
@@ -130,10 +135,14 @@ async function processWebhookEvent(event) {
     }
 
     const billId = linkEntity.reference_id
+    // linkEntity.payments entries are objects ({ payment_id, ... }), not id strings —
+    // same normalization as fetchPaymentIdFromLink, so we never store a JSON blob.
+    const firstLinkPayment = Array.isArray(linkEntity.payments) ? linkEntity.payments[0] : null
     const paymentId =
       paymentEntity?.id ||
-      (Array.isArray(linkEntity.payments) ? linkEntity.payments[0] : null) ||
-      null
+      (firstLinkPayment
+        ? (typeof firstLinkPayment === 'string' ? firstLinkPayment : (firstLinkPayment.payment_id || firstLinkPayment.id || null))
+        : null)
 
     const amountPaid = Number(linkEntity.amount_paid || linkEntity.amount || 0) / 100
 

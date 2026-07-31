@@ -37,6 +37,76 @@ function RangeShifter({ from, onShift, onThisMonth, onAllTime }) {
   )
 }
 
+/**
+ * Month calendar heat-map of daily deliveries.
+ * Green = final save happened that day (a daily_entries row exists), shade scales with
+ * volume; grey/dashed = no final entry saved, which is what makes missed days obvious.
+ */
+function DeliveryCalendar({ days }) {
+  if (!days.length) return null
+  const maxTotal = Math.max(...days.map((d) => d.total), 0)
+  const leadingBlanks = days[0]?.weekday ?? 0
+  const savedDays = days.filter((d) => d.finalSaved).length
+  const monthTotal = days.reduce((s, d) => s + d.total, 0)
+  const monthAmount = days.reduce((s, d) => s + d.amount, 0)
+
+  function shade(d) {
+    if (!d.finalSaved) return 'border-dashed border-slate-200 bg-slate-50 text-slate-300'
+    if (d.total <= 0) return 'border-amber-200 bg-amber-50 text-amber-700'
+    const ratio = maxTotal > 0 ? d.total / maxTotal : 0
+    if (ratio > 0.75) return 'border-green-600 bg-green-600 text-white'
+    if (ratio > 0.5) return 'border-green-500 bg-green-400 text-white'
+    if (ratio > 0.25) return 'border-green-400 bg-green-200 text-green-900'
+    return 'border-green-300 bg-green-100 text-green-800'
+  }
+
+  return (
+    <div>
+      <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-400">
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((w) => <div key={w}>{w}</div>)}
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {Array.from({ length: leadingBlanks }).map((_, i) => <div key={`blank-${i}`} />)}
+        {days.map((d) => (
+          <div
+            key={d.date}
+            title={d.finalSaved
+              ? `${d.date}\n${d.total.toFixed(1)} L · ${formatCurrency(d.amount)} · ${d.customers} customers`
+              : `${d.date}\nNo final save`}
+            className={`flex min-h-[58px] flex-col items-center justify-center rounded-lg border p-1 transition ${shade(d)}`}
+          >
+            <span className="text-[10px] opacity-70">{d.day}</span>
+            {d.finalSaved ? (
+              <>
+                <span className="text-sm font-bold leading-tight">{d.total.toFixed(1)}</span>
+                <span className="text-[9px] opacity-80">L</span>
+              </>
+            ) : (
+              <span className="text-base leading-tight">·</span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs">
+        <span className="text-slate-600">
+          <strong>{savedDays}</strong>/{days.length} days saved · <strong>{monthTotal.toFixed(1)} L</strong> · {formatCurrency(monthAmount)}
+        </span>
+        <span className="flex items-center gap-1.5 text-slate-400">
+          Less
+          <span className="h-3 w-3 rounded border border-green-300 bg-green-100" />
+          <span className="h-3 w-3 rounded border border-green-400 bg-green-200" />
+          <span className="h-3 w-3 rounded border border-green-500 bg-green-400" />
+          <span className="h-3 w-3 rounded border border-green-600 bg-green-600" />
+          More
+          <span className="ml-2 h-3 w-3 rounded border border-dashed border-slate-300 bg-slate-50" />
+          Not saved
+        </span>
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const [stats, setStats] = useState({
     revenue: 0, milkRevenue: 0, productRevenue: 0, outstanding: 0,
@@ -71,6 +141,7 @@ export default function Dashboard() {
   const [milkChart, setMilkChart] = useState([])
   const [deliveryMonth, setDeliveryMonth] = useState(currentYearMonth())
   const [deliveryChart, setDeliveryChart] = useState([])
+  const [deliveryView, setDeliveryView] = useState('line')
   const [unpaidBills, setUnpaidBills] = useState([])
   const [recentPayments, setRecentPayments] = useState([])
   const [topPayers, setTopPayers] = useState([])
@@ -318,15 +389,29 @@ export default function Dashboard() {
     const byDate = {}
     for (const e of rawMilkDeliveries) {
       if (e.date < start || e.date > end) continue
-      if (!byDate[e.date]) byDate[e.date] = { morning: 0, evening: 0 }
+      if (!byDate[e.date]) byDate[e.date] = { morning: 0, evening: 0, amount: 0, customers: 0 }
       byDate[e.date].morning += Number(e.morning_qty || 0)
       byDate[e.date].evening += Number(e.evening_qty || 0)
+      byDate[e.date].amount += Number(e.amount || 0)
+      byDate[e.date].customers += 1
     }
     const arr = []
     for (let d = 1; d <= daysInMonth; d++) {
       const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-      const v = byDate[dateStr] || { morning: 0, evening: 0 }
-      arr.push({ day: String(d), morning: v.morning, evening: v.evening, total: v.morning + v.evening })
+      const v = byDate[dateStr]
+      arr.push({
+        day: String(d),
+        date: dateStr,
+        morning: v?.morning || 0,
+        evening: v?.evening || 0,
+        total: (v?.morning || 0) + (v?.evening || 0),
+        amount: v?.amount || 0,
+        customers: v?.customers || 0,
+        // daily_entries rows are written ONLY by the /finalize endpoint, so their
+        // presence is a reliable signal that the day's final save happened.
+        finalSaved: Boolean(v),
+        weekday: new Date(y, m - 1, d).getDay()
+      })
     }
     setDeliveryChart(arr)
   }, [deliveryMonth, rawMilkDeliveries])
@@ -481,6 +566,48 @@ export default function Dashboard() {
         </div>
       </section>
 
+      {/* ── Daily Deliveries: line chart / calendar heat-map ──── */}
+      <section>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Daily Deliveries — Morning + Evening</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex overflow-hidden rounded-lg border border-slate-200 bg-white text-xs font-medium">
+              {[['line', '📈 Chart'], ['calendar', '🗓️ Calendar']].map(([val, label]) => (
+                <button
+                  key={val}
+                  onClick={() => setDeliveryView(val)}
+                  className={`px-3 py-1.5 transition-colors ${deliveryView === val ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <RangeShifter from={`${deliveryMonth}-01`} onShift={shiftDelivery} onThisMonth={deliveryThisMonth} />
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          {deliveryView === 'calendar' ? (
+            <DeliveryCalendar days={deliveryChart} />
+          ) : (
+          <ResponsiveContainer width="100%" height={280}>
+            <LineChart data={deliveryChart} margin={{ top: 6, right: 12, left: -12, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="day" tick={{ fontSize: 10 }} interval={1} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip
+                formatter={(v, name) => [`${Number(v).toFixed(1)} L`, name]}
+                labelFormatter={(d) => `Day ${d} · ${monthLabelOf(`${deliveryMonth}-01`)}`}
+              />
+              <Legend />
+              <Line type="monotone" dataKey="total" stroke="#16a34a" strokeWidth={2.5} name="Total" dot={{ r: 2 }} activeDot={{ r: 5 }} />
+              <Line type="monotone" dataKey="morning" stroke="#3b82f6" strokeWidth={1.5} name="Morning" dot={false} />
+              <Line type="monotone" dataKey="evening" stroke="#8b5cf6" strokeWidth={1.5} name="Evening" dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+          )}
+        </div>
+      </section>
+
       {/* ── Business Health ────────────────────────────────────── */}
       <section>
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Business Health</h2>
@@ -562,33 +689,10 @@ export default function Dashboard() {
         </div>
       </section>
 
-      {/* ── Daily Deliveries line chart ───────────────────────── */}
+      {/* ── Trends ────────────────────────────────────────────── */}
       <section>
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Daily Deliveries — Morning + Evening</h2>
-          <RangeShifter from={`${deliveryMonth}-01`} onShift={shiftDelivery} onThisMonth={deliveryThisMonth} />
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={deliveryChart} margin={{ top: 6, right: 12, left: -12, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="day" tick={{ fontSize: 10 }} interval={1} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip
-                formatter={(v, name) => [`${Number(v).toFixed(1)} L`, name]}
-                labelFormatter={(d) => `Day ${d} · ${monthLabelOf(`${deliveryMonth}-01`)}`}
-              />
-              <Legend />
-              <Line type="monotone" dataKey="total" stroke="#16a34a" strokeWidth={2.5} name="Total" dot={{ r: 2 }} activeDot={{ r: 5 }} />
-              <Line type="monotone" dataKey="morning" stroke="#3b82f6" strokeWidth={1.5} name="Morning" dot={false} />
-              <Line type="monotone" dataKey="evening" stroke="#8b5cf6" strokeWidth={1.5} name="Evening" dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </section>
-
-      {/* ── Charts ────────────────────────────────────────────── */}
-      <div className="grid gap-6 lg:grid-cols-2">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Trends</h2>
+        <div className="grid gap-6 lg:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <h2 className="mb-4 font-semibold text-slate-700">Revenue vs Expenses (6 months)</h2>
           <ResponsiveContainer width="100%" height={220}>
@@ -629,10 +733,13 @@ export default function Dashboard() {
             </BarChart>
           </ResponsiveContainer>
         </div>
-      </div>
+        </div>
+      </section>
 
-      {/* ── Customer Payment Intelligence ─────────────────────── */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      {/* ── Payment Intelligence ───────────────────────────────── */}
+      <section>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Payment Intelligence</h2>
+        <div className="grid gap-6 lg:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <h2 className="mb-3 font-semibold text-slate-700">Top Paying Customers</h2>
           {topPayers.length === 0 ? (
@@ -678,11 +785,13 @@ export default function Dashboard() {
             </div>
           )}
         </div>
-      </div>
+        </div>
+      </section>
 
       {/* ── Unpaid Bills ──────────────────────────────────────── */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <h2 className="mb-4 font-semibold text-slate-700">Unpaid Bills</h2>
+      <section>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Unpaid Bills</h2>
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
         {unpaidBills.length === 0 ? (
           <p className="text-sm text-slate-500">All bills paid!</p>
         ) : (
@@ -722,11 +831,13 @@ export default function Dashboard() {
             </table>
           </div>
         )}
-      </div>
+        </div>
+      </section>
 
       {/* ── Recent Payments ───────────────────────────────────── */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <h2 className="mb-4 font-semibold text-slate-700">Recent Payments</h2>
+      <section>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Recent Payments</h2>
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
         {recentPayments.length === 0 ? (
           <p className="text-sm text-slate-500">No payments yet.</p>
         ) : (
@@ -755,7 +866,8 @@ export default function Dashboard() {
             </table>
           </div>
         )}
-      </div>
+        </div>
+      </section>
     </div>
   )
 }

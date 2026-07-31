@@ -36,7 +36,8 @@ export default function Bills() {
   const [sendAck, setSendAck] = useState(true)
   const [ackDefault, setAckDefault] = useState(true)
   const [savingCash, setSavingCash] = useState(false)
-  const [methodFilter, setMethodFilter] = useState('')
+  const [methodFilter, setMethodFilter] = useState([])
+  const [mismatch, setMismatch] = useState(null)
   const [running, setRunning] = useState('')
   const [progress, setProgress] = useState(null)
   const [toast, setToast] = useState({ message: '', type: 'success' })
@@ -84,11 +85,71 @@ export default function Bills() {
     setPaidMap(pmap)
     setLoading(false)
 
+    checkMismatch(start, end, data || [])
+
     const hasPendingRazorpay = (data || []).some((b) => !b.paid && b.razorpay_link_id)
     if (hasPendingRazorpay) autoReconcile()
   }
 
+  /**
+   * Bills are a point-in-time snapshot — any delivery finalized AFTER bill generation is
+   * silently left unbilled and makes the dashboard disagree with bills. Compare actual
+   * deliveries for the period against what was billed, so that gap surfaces immediately.
+   */
+  async function checkMismatch(start, end, billList) {
+    // The current month is still being delivered and its bills aren't generated yet
+    // (that happens at the start of the next month), so a "gap" there is expected,
+    // not a problem — only flag months that are actually closed.
+    if (month >= currentYearMonth()) {
+      setMismatch(null)
+      return
+    }
+    try {
+      const [{ data: entries }, { data: bmEntries }] = await Promise.all([
+        supabase.from('daily_entries').select('customer_id, amount').gte('date', start).lte('date', end),
+        supabase.from('buttermilk_entries').select('customer_id, amount').gte('date', start).lte('date', end)
+      ])
+
+      const deliveredByCustomer = {}
+      for (const e of [...(entries || []), ...(bmEntries || [])]) {
+        deliveredByCustomer[e.customer_id] = (deliveredByCustomer[e.customer_id] || 0) + Number(e.amount || 0)
+      }
+
+      const billedByCustomer = {}
+      for (const b of billList) {
+        billedByCustomer[b.customer_id] = (billedByCustomer[b.customer_id] || 0) + Number(b.subtotal ?? b.total_amount ?? 0)
+      }
+
+      let unbilledCustomers = 0
+      let underBilled = 0
+      let gap = 0
+      for (const [cid, delivered] of Object.entries(deliveredByCustomer)) {
+        if (delivered <= 0) continue
+        const billed = billedByCustomer[cid] || 0
+        const diff = delivered - billed
+        if (diff <= 0.01) continue
+        gap += diff
+        if (!billedByCustomer[cid]) unbilledCustomers++
+        else underBilled++
+      }
+
+      setMismatch(gap > 0.01 ? { gap, unbilledCustomers, underBilled } : null)
+    } catch {
+      setMismatch(null)
+    }
+  }
+
   async function runGenerateAll() {
+    const monthLabel = new Date(`${month}-01T00:00:00`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+    const isCurrentMonth = month >= currentYearMonth()
+    const warning = isCurrentMonth
+      ? `\n\n⚠️ ${monthLabel} isn't over yet — bills are normally generated after the month ends. Only continue if you're sure.`
+      : ''
+    const confirmed = window.confirm(
+      `Generate bills for ALL customers for ${monthLabel}?${warning}\n\nThis creates a bill (+ Razorpay link) for every customer with unbilled entries. It cannot be undone with one click — cancelling now is safer if unsure.`
+    )
+    if (!confirmed) return
+
     setRunning('generate')
     try {
       await wakeBackend()
@@ -164,14 +225,18 @@ export default function Bills() {
     return bills.filter((b) => {
       const status = getBillStatus(b, paidMap[b.id] || 0)
       if (tab !== 'all' && status !== tab) return false
-      // Payment-method filter applies to paid bills only.
-      if (methodFilter && (!b.paid || (b.payment_mode || '') !== methodFilter)) return false
+      // Payment-method filter (multi-select, OR'd) applies to paid bills only.
+      if (methodFilter.length && (!b.paid || !methodFilter.includes(b.payment_mode || ''))) return false
       if (!q) return true
       const name = (b.customers?.name || '').toLowerCase()
       const cid = (b.customers?.customer_id || '').toLowerCase()
       const bid = (b.id || '').toLowerCase()
       return name.includes(q) || cid.includes(q) || bid.includes(q)
     })
+  }
+
+  function toggleMethod(mode) {
+    setMethodFilter((prev) => prev.includes(mode) ? prev.filter((m) => m !== mode) : [...prev, mode])
   }
 
   // Amount collected this month per payment method (paid bills, by bills.payment_mode).
@@ -368,24 +433,58 @@ export default function Bills() {
         )}
       </div>
 
-      {/* Collected this month, by payment method (paid bills) — click a card to filter */}
+      {mismatch && (
+        <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-4">
+          <p className="font-semibold text-amber-900">⚠️ Deliveries don&apos;t match bills for {month}</p>
+          <p className="mt-1 text-sm text-amber-800">
+            {formatCurrency(mismatch.gap)} of deliveries {mismatch.gap > 0 ? 'is not billed' : ''}
+            {mismatch.unbilledCustomers > 0 && ` · ${mismatch.unbilledCustomers} customer(s) have no bill`}
+            {mismatch.underBilled > 0 && ` · ${mismatch.underBilled} bill(s) are short`}
+          </p>
+          <p className="mt-1 text-xs text-amber-700">
+            Usually means deliveries were finalized after bills were generated. Re-run
+            <strong> Generate All Bills</strong> to create missing bills (existing bills are never
+            modified — short ones must be deleted and regenerated from the customer page).
+          </p>
+        </div>
+      )}
+
+      {/* Collected this month, by payment method (paid bills) — click cards to filter (multi-select) */}
       <div>
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Collected this month {methodFilter && <button onClick={() => setMethodFilter('')} className="ml-2 font-normal normal-case text-green-600 hover:underline">clear filter</button>}</p>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Collected this month
+          {methodFilter.length > 0 && (
+            <button onClick={() => setMethodFilter([])} className="ml-2 font-normal normal-case text-green-600 hover:underline">
+              clear filter ({methodFilter.length})
+            </button>
+          )}
+        </p>
         <div className="grid grid-cols-3 gap-2">
           {(() => {
             const t = paymentMethodTotals()
-            return ['cash', 'qr', 'upi'].map((mode) => (
-              <button
-                key={mode}
-                onClick={() => setMethodFilter(methodFilter === mode ? '' : mode)}
-                className={`rounded-xl border p-3 text-left transition ${methodFilter === mode ? 'border-green-500 bg-green-50 ring-1 ring-green-500' : 'border-slate-200 bg-white hover:border-slate-300'}`}
-              >
-                <p className="text-xs text-slate-500">{paymentModeLabel(mode)}</p>
-                <p className="mt-0.5 text-base font-bold text-slate-800 sm:text-lg">{formatCurrency(t[mode])}</p>
-              </button>
-            ))
+            return ['cash', 'qr', 'upi'].map((mode) => {
+              const on = methodFilter.includes(mode)
+              return (
+                <button
+                  key={mode}
+                  onClick={() => toggleMethod(mode)}
+                  className={`rounded-xl border p-3 text-left transition ${on ? 'border-green-500 bg-green-50 ring-1 ring-green-500' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                >
+                  <p className="flex items-center gap-1 text-xs text-slate-500">
+                    <span className={`inline-block h-3 w-3 shrink-0 rounded border ${on ? 'border-green-600 bg-green-600' : 'border-slate-300'}`} />
+                    {paymentModeLabel(mode)}
+                  </p>
+                  <p className="mt-0.5 text-base font-bold text-slate-800 sm:text-lg">{formatCurrency(t[mode])}</p>
+                </button>
+              )
+            })
           })()}
         </div>
+        {methodFilter.length > 0 && (
+          <p className="mt-2 text-sm font-medium text-slate-600">
+            Selected total: {formatCurrency(methodFilter.reduce((s, m) => s + paymentMethodTotals()[m], 0))}
+          </p>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
