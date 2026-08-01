@@ -149,6 +149,7 @@ export default function Dashboard() {
   const [overdueCustomers, setOverdueCustomers] = useState([])
   const [rawAllBills, setRawAllBills] = useState([])
   const [rawAllPaidMap, setRawAllPaidMap] = useState({})
+  const [collectionMonth, setCollectionMonth] = useState(currentYearMonth())
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState({ message: '', type: 'success' })
 
@@ -488,6 +489,40 @@ export default function Dashboard() {
   function svpAllTime() { setSvpFrom(''); setSvpTo('') }
   function shiftDelivery(delta) { const [y, m] = deliveryMonth.split('-').map(Number); const d = new Date(y, m - 1 + delta, 1); setDeliveryMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`) }
   function deliveryThisMonth() { setDeliveryMonth(currentYearMonth()) }
+  function shiftCollection(delta) { const [y, m] = collectionMonth.split('-').map(Number); const d = new Date(y, m - 1 + delta, 1); setCollectionMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`) }
+  function collectionThisMonth() { setCollectionMonth(currentYearMonth()) }
+
+  // How much of the month's billed money has actually come in, and how many bills are
+  // settled. Amounts are capped at each bill's total so an overpayment can't push past 100%.
+  const collection = (() => {
+    const { start } = getMonthBounds(collectionMonth)
+    const bills = rawAllBills.filter((b) => b.period_start === start && Number(b.total_amount) > 0)
+    let billed = 0
+    let collected = 0
+    let paidCount = 0
+    let partialCount = 0
+    let unpaidCount = 0
+    for (const b of bills) {
+      const total = Number(b.total_amount)
+      const got = Math.min(rawAllPaidMap[b.id] || 0, total)
+      billed += total
+      collected += got
+      const status = getBillStatus(b, rawAllPaidMap[b.id] || 0)
+      if (status === 'paid') paidCount++
+      else if (got > 0) partialCount++
+      else unpaidCount++
+    }
+    return {
+      billed,
+      collected,
+      outstanding: Math.max(0, billed - collected),
+      pct: billed > 0 ? Math.round((collected / billed) * 100) : 0,
+      billCount: bills.length,
+      paidCount,
+      partialCount,
+      unpaidCount
+    }
+  })()
 
   if (loading) return <div className="py-12 text-center text-slate-500">Loading dashboard...</div>
 
@@ -608,6 +643,72 @@ export default function Dashboard() {
               <Line type="monotone" dataKey="evening" stroke="#8b5cf6" strokeWidth={1.5} name="Evening" dot={false} />
             </LineChart>
           </ResponsiveContainer>
+          )}
+        </div>
+      </section>
+
+      {/* ── Payment Collection ────────────────────────────────── */}
+      <section>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Payment Collection</h2>
+          <RangeShifter from={`${collectionMonth}-01`} onShift={shiftCollection} onThisMonth={collectionThisMonth} />
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          {collection.billCount === 0 ? (
+            <p className="py-2 text-center text-sm text-slate-500">
+              No bills generated for {monthLabelOf(`${collectionMonth}-01`)} yet.
+            </p>
+          ) : (
+            <>
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <p className="text-3xl font-bold text-slate-800">
+                    {collection.pct}
+                    <span className="text-lg font-semibold text-slate-400">/100</span>
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {formatCurrency(collection.collected)} of {formatCurrency(collection.billed)} cleared
+                  </p>
+                </div>
+                <p className="text-sm font-semibold text-slate-700">
+                  {collection.paidCount}<span className="font-normal text-slate-400"> of </span>{collection.billCount}
+                  <span className="font-normal text-slate-400"> bills marked paid</span>
+                </p>
+              </div>
+
+              {/* Fill width is share of billed amount collected; colour reflects how healthy that is */}
+              <div className="h-4 w-full overflow-hidden rounded-full bg-slate-200">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    collection.pct >= 90 ? 'bg-green-600' : collection.pct >= 60 ? 'bg-amber-500' : 'bg-red-500'
+                  }`}
+                  style={{ width: `${Math.min(100, collection.pct)}%` }}
+                />
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                <span className="flex items-center gap-1.5 text-slate-600">
+                  <span className="h-2.5 w-2.5 rounded-full bg-green-600" />
+                  {collection.paidCount} paid
+                </span>
+                {collection.partialCount > 0 && (
+                  <span className="flex items-center gap-1.5 text-slate-600">
+                    <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                    {collection.partialCount} partial
+                  </span>
+                )}
+                <span className="flex items-center gap-1.5 text-slate-600">
+                  <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />
+                  {collection.unpaidCount} unpaid
+                </span>
+                {collection.outstanding > 0 && (
+                  <span className="ml-auto font-semibold text-orange-700">
+                    {formatCurrency(collection.outstanding)} still due
+                  </span>
+                )}
+              </div>
+            </>
           )}
         </div>
       </section>
