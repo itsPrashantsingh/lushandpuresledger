@@ -91,6 +91,41 @@ product_sales id and isn't part of this summary). The failures panel and `automa
 ("recent runs") intentionally stay scoped by `created_at`/`ran_at` — those are operational logs
 of "what broke recently", not revenue figures, so send-date framing is correct there.
 
+## ☠️ CRITICAL CLASS OF BUG: PostgREST silently truncates at 1000 rows
+**Read this before writing ANY Supabase query in this repo.**
+
+PostgREST caps a single response at 1000 rows and returns **success with a short array** —
+no error, no warning. Truncation is completely invisible. `daily_entries` passed this threshold
+in 2026-07 (**a single month is 1044 rows**; lifetime 1160), so *any* month-wide read of it is
+now affected. Worse, these queries used `.order('date')`, which makes the cut **deterministic
+and always at the END of the month** — so it silently drops the last days of a billing period.
+
+**Rule: use `fetchAllRows()` for any query that can exceed 1000 rows in its range.** Canonical
+implementation is exported from `frontend/src/lib/utils.js`; the backend has its own copy in
+`backend/lib/billing.js` (CommonJS). It takes a query *factory* and pages via `.range()`:
+`fetchAllRows(() => supabase.from('daily_entries').select('*').gte(...))`. It throws on error,
+so callers must NOT also destructure/check `error`. Queries narrowed to a single customer or a
+single date are safe and intentionally left unpaginated.
+
+Audited and fixed 2026-08-01 across the whole app. **Billing paths (money-critical):**
+- `generateAllMonthlyBills` — frontend `lib/bills.js` AND backend `lib/billing.js`.
+  **This is the disaster case.** Verified against live prod: a bare select returned 1000 rows
+  ending 2026-07-30 / ₹89,580, vs paginated 1044 rows ending 2026-07-31 / ₹93,555. Generating
+  July's bills would have **under-billed ₹3,975 across 35 customers**, losing Jul 31 entirely
+  and part of Jul 30 — and the dedup `billedCustomers` guard means the short bills would then
+  BLOCK any correct regeneration. Caught on 2026-08-01, the very day July bills were due.
+- `getMonthlyBillPackages` — frontend + backend (the WhatsApp send queue / PDF builder);
+  truncation would have sent PDFs missing the month's final delivery rows.
+**Reporting paths:** Dashboard (see below), `Bills.jsx` mismatch detector (would invent a
+phantom under-billed gap), `loadCustomerMonthStats` (Customers tab), and all of
+`lib/export-data.js` (`exportMonthlyBilling`, `exportCustomerDeliveries`,
+`exportButtermilkProduction`, `exportMilkProduction`, `exportProductSales`) — the likely root
+cause of the long-standing "export totals contradict dashboard milk revenue" complaint.
+
+Currently-safe row counts (re-check if this resurfaces): cattle_milk_entries 670, expenses 149,
+payments 75, product_sales 20, buttermilk_entries 0. `bills` grows ~72/month — it will cross
+1000 around late 2027, so paginate any all-time `bills` read before then.
+
 ## FIXED BUG (2026-08-01): Dashboard silently truncated daily_entries past 1000 rows
 `daily_entries` passed 1000 total rows (1160 as of 2026-07-31). Two Dashboard queries fetched
 the **entire table with no filter and no `.range()`** — `supabase.from('daily_entries').select(...)`

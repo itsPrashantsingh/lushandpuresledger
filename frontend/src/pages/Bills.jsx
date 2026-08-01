@@ -19,7 +19,7 @@ import { shareBillOnWhatsApp } from '../lib/whatsapp'
 import { sendBillViaApi, sendTextViaApi, getAutomationConfig } from '../lib/whatsapp-api'
 import WhatsAppSendQueue from '../components/WhatsAppSendQueue'
 import LoadingOverlay from '../components/LoadingOverlay'
-import { getBillStatus, formatCurrency, whatsappLink, currentYearMonth, formatDate, paymentModeLabel, todayISO } from '../lib/utils'
+import { getBillStatus, formatCurrency, whatsappLink, currentYearMonth, formatDate, paymentModeLabel, todayISO, fetchAllRows } from '../lib/utils'
 import { buildPaymentDueMessage } from '../lib/messages'
 
 export default function Bills() {
@@ -105,9 +105,11 @@ export default function Bills() {
       return
     }
     try {
-      const [{ data: entries }, { data: bmEntries }] = await Promise.all([
-        supabase.from('daily_entries').select('customer_id, amount').gte('date', start).lte('date', end),
-        supabase.from('buttermilk_entries').select('customer_id, amount').gte('date', start).lte('date', end)
+      // Paginated — a truncated read here would invent a phantom "under-billed" gap,
+      // which is exactly the kind of false alarm this detector exists to avoid.
+      const [entries, bmEntries] = await Promise.all([
+        fetchAllRows(() => supabase.from('daily_entries').select('customer_id, amount').gte('date', start).lte('date', end)),
+        fetchAllRows(() => supabase.from('buttermilk_entries').select('customer_id, amount').gte('date', start).lte('date', end))
       ])
 
       const deliveredByCustomer = {}

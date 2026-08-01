@@ -13,29 +13,12 @@ import {
   isOverdue,
   whatsappLink,
   getBillStatus,
-  todayISO
+  todayISO,
+  fetchAllRows
 } from '../lib/utils'
 import { getPaidAmountsForBills, markCashPayment, reconcileRazorpayPayments, wakeBackend } from '../lib/bills'
 import { buildPaymentDueMessage } from '../lib/messages'
 import { sendTextViaApi } from '../lib/whatsapp-api'
-
-// Supabase/PostgREST caps a single response at 1000 rows. daily_entries already exceeds
-// that lifetime, so an unbounded select silently drops rows past the 1000th (in whatever
-// order Postgres happens to scan them) — this is what caused finalized days to show as
-// missing/undercounted on the deliveries chart & heatmap. Page through with .range() instead.
-async function fetchAllRows(makeQuery) {
-  const pageSize = 1000
-  let from = 0
-  let all = []
-  while (true) {
-    const { data, error } = await makeQuery().range(from, from + pageSize - 1)
-    if (error) throw error
-    all = all.concat(data || [])
-    if (!data || data.length < pageSize) break
-    from += pageSize
-  }
-  return { data: all }
-}
 
 function monthLabelOf(fromDate) {
   if (!fromDate) return 'All time'
@@ -175,39 +158,43 @@ export default function Dashboard() {
     const { start, end } = getMonthBounds(ym)
     const today = todayISO()
 
+    // Every all-time / whole-month read of a table that can pass 1000 rows goes through
+    // fetchAllRows — PostgREST truncates silently at 1000 and the shortfall is invisible.
     const [
-      paymentsRes, productSalesRes, billsRes, cattleEntriesRes, deliveredRes,
-      expensesRes, allPaymentsRes, allProductSalesRes, allExpensesRes,
-      cattleEntries30Res, activeCustomersRes, activeCattleRes,
-      allCattleEntriesRes, allDailyEntriesRes, cattleListRes,
-      allBmDeliveriesRes
+      paymentsRes, productSalesRes, billsRes, cattleEntriesRes,
+      expensesRes, allPaymentsAll, allProductSalesAll, allExpensesAll,
+      cattleEntries30, activeCustomersRes, activeCattleRes,
+      allCattleEntries, allDailyEntries, cattleListRes,
+      allBmDeliveries
     ] = await Promise.all([
       supabase.from('payments').select('amount').gte('paid_at', start).lte('paid_at', end + 'T23:59:59'),
       supabase.from('product_sales').select('total_amount').gte('date', start).lte('date', end).eq('paid', true),
       supabase.from('bills').select('*, customers(*)').eq('paid', false),
       supabase.from('cattle_milk_entries').select('morning_litres, evening_litres, total_litres').gte('date', start).lte('date', end),
-      supabase.from('daily_entries').select('total_qty, amount').gte('date', start).lte('date', end),
       supabase.from('expenses').select('amount').gte('date', start).lte('date', end),
-      supabase.from('payments').select('amount, paid_at'),
-      supabase.from('product_sales').select('total_amount, date').eq('paid', true),
-      supabase.from('expenses').select('amount, date'),
-      supabase.from('cattle_milk_entries').select('date, morning_litres, evening_litres, total_litres, cattle_id').gte('date', last30Days()[0].date),
+      fetchAllRows(() => supabase.from('payments').select('amount, paid_at')),
+      fetchAllRows(() => supabase.from('product_sales').select('total_amount, date').eq('paid', true)),
+      fetchAllRows(() => supabase.from('expenses').select('amount, date')),
+      fetchAllRows(() => supabase.from('cattle_milk_entries').select('date, morning_litres, evening_litres, total_litres, cattle_id').gte('date', last30Days()[0].date)),
       supabase.from('customers').select('id', { count: 'exact', head: true }).eq('active', true),
       supabase.from('cattle').select('id', { count: 'exact', head: true }).eq('active', true),
-      supabase.from('cattle_milk_entries').select('total_litres, date, cattle_id'),
+      fetchAllRows(() => supabase.from('cattle_milk_entries').select('total_litres, date, cattle_id')),
       fetchAllRows(() => supabase.from('daily_entries').select('total_qty, amount, morning_qty, evening_qty, date')),
       supabase.from('cattle').select('id, name, cattle_id').eq('active', true).order('name'),
-      supabase.from('buttermilk_entries').select('amount, date')
+      fetchAllRows(() => supabase.from('buttermilk_entries').select('amount, date'))
     ])
 
-    const milkRevenue = (deliveredRes.data || []).reduce((s, e) => s + Number(e.amount), 0)
+    // This month's deliveries are derived from the paginated all-time set rather than a
+    // second month-scoped query — one source of truth, and a month alone can exceed 1000 rows.
+    const monthEntries = allDailyEntries.filter((e) => e.date >= start && e.date <= end)
+    const milkRevenue = monthEntries.reduce((s, e) => s + Number(e.amount), 0)
     const productRevenue = (productSalesRes.data || []).reduce((s, p) => s + Number(p.total_amount), 0)
     const monthRevenue = milkRevenue + productRevenue
     const monthExpenses = (expensesRes.data || []).reduce((s, e) => s + Number(e.amount), 0)
     const milkMorning = (cattleEntriesRes.data || []).reduce((s, e) => s + Number(e.morning_litres), 0)
     const milkEvening = (cattleEntriesRes.data || []).reduce((s, e) => s + Number(e.evening_litres), 0)
     const milkProduced = milkMorning + milkEvening
-    const milkDelivered = (deliveredRes.data || []).reduce((s, e) => s + Number(e.total_qty), 0)
+    const milkDelivered = monthEntries.reduce((s, e) => s + Number(e.total_qty), 0)
 
     const unpaidList = (billsRes.data || []).filter((b) => Number(b.total_amount) > 0)
     const paidMap = await getPaidAmountsForBills(unpaidList.map((b) => b.id))
@@ -238,27 +225,27 @@ export default function Dashboard() {
     })
 
     // Store raw SVP data — recomputed in useEffect when the SVP date range changes
-    setRawCattleEntries(allCattleEntriesRes.data || [])
-    setRawDailyEntries(allDailyEntriesRes.data || [])
+    setRawCattleEntries(allCattleEntries)
+    setRawDailyEntries(allDailyEntries)
 
     // Store raw revenue data — recomputed in useEffect when date range changes
-    setRawMilkDeliveries(allDailyEntriesRes.data || [])
-    setRawBmDeliveries(allBmDeliveriesRes.data || [])
-    setRawProductSalesAll(allProductSalesRes.data || [])
-    setRawExpensesAll(allExpensesRes.data || [])
-    setRawPaymentsAll(allPaymentsRes.data || [])
+    setRawMilkDeliveries(allDailyEntries)
+    setRawBmDeliveries(allBmDeliveries)
+    setRawProductSalesAll(allProductSalesAll)
+    setRawExpensesAll(allExpensesAll)
+    setRawPaymentsAll(allPaymentsAll)
 
     // Cattle list for filter
     setCattle(cattleListRes.data || [])
 
     // Raw 30-day entries for milk chart (filtered per-cattle in useEffect)
-    setRawMilkChart30(cattleEntries30Res.data || [])
+    setRawMilkChart30(cattleEntries30)
 
     // Production KPIs (total / all cattle)
-    const allEntries = allCattleEntriesRes.data || []
+    const allEntries = allCattleEntries
     const todayTotal = allEntries.filter((e) => e.date === today).reduce((s, e) => s + Number(e.total_litres), 0)
     const monthTotal = allEntries.filter((e) => e.date >= start && e.date <= end).reduce((s, e) => s + Number(e.total_litres), 0)
-    const last30Total = (cattleEntries30Res.data || []).reduce((s, e) => s + Number(e.total_litres), 0)
+    const last30Total = cattleEntries30.reduce((s, e) => s + Number(e.total_litres), 0)
     const lifetimeTotal = allEntries.reduce((s, e) => s + Number(e.total_litres), 0)
     setProductionKpis({ today: todayTotal, thisMonth: monthTotal, last30: last30Total, lifetime: lifetimeTotal })
 
@@ -266,9 +253,9 @@ export default function Dashboard() {
     const months = last6Months()
     const revData = months.map((m) => {
       const { start: ms, end: me } = getMonthBounds(m.key)
-      const milkRev = (allDailyEntriesRes.data || []).filter((e) => e.date >= ms && e.date <= me).reduce((s, e) => s + Number(e.amount), 0)
-      const productRev = (allProductSalesRes.data || []).filter((p) => p.date >= ms && p.date <= me).reduce((s, p) => s + Number(p.total_amount), 0)
-      const exp = (allExpensesRes.data || []).filter((e) => e.date >= ms && e.date <= me).reduce((s, e) => s + Number(e.amount), 0)
+      const milkRev = allDailyEntries.filter((e) => e.date >= ms && e.date <= me).reduce((s, e) => s + Number(e.amount), 0)
+      const productRev = allProductSalesAll.filter((p) => p.date >= ms && p.date <= me).reduce((s, p) => s + Number(p.total_amount), 0)
+      const exp = allExpensesAll.filter((e) => e.date >= ms && e.date <= me).reduce((s, e) => s + Number(e.amount), 0)
       return { month: m.label, revenue: milkRev + productRev, milkRevenue: milkRev, productRevenue: productRev, expenses: exp }
     })
     setRevenueChart(revData)

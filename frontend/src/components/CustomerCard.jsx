@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { formatCurrency } from '../lib/utils'
 
-export default function CustomerCard({ customer, monthTotal, status }) {
+export default function CustomerCard({ customer, monthTotal, status, milkQty = 0, buttermilkQty = 0, monthText = 'this month' }) {
   const badge = {
     paid: 'bg-green-100 text-green-700',
     partial: 'bg-amber-100 text-amber-700',
@@ -26,10 +26,18 @@ export default function CustomerCard({ customer, monthTotal, status }) {
       </div>
       <p className="mt-3 text-lg font-bold text-slate-700">
         {formatCurrency(monthTotal)}
-        <span className="ml-1 text-sm font-normal text-slate-400">this month</span>
+        <span className="ml-1 text-sm font-normal text-slate-400">{monthText}</span>
       </p>
-      {customer.buttermilk_required && (
-        <p className="mt-1 text-xs text-purple-600">+ Buttermilk {customer.buttermilk_quantity}L/day</p>
+      {/* Quantities actually received in the selected month — 0 L means nothing was
+          delivered, which reads differently from a customer who simply has no bill yet. */}
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        <span className="font-medium text-slate-600">🥛 {milkQty.toFixed(1)} L milk</span>
+        {buttermilkQty > 0 && (
+          <span className="font-medium text-purple-600">🧉 {buttermilkQty.toFixed(1)} L buttermilk</span>
+        )}
+      </div>
+      {customer.buttermilk_required && buttermilkQty === 0 && (
+        <p className="mt-1 text-xs text-purple-400">Subscribed · {customer.buttermilk_quantity}L/day</p>
       )}
     </Link>
   )

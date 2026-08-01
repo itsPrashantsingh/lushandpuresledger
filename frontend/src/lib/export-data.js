@@ -1,16 +1,14 @@
 import { supabase } from './supabase'
 import { downloadWorkbook, downloadCsv } from './import-export'
-import { getMonthBounds, getBillStatus } from './utils'
+import { getMonthBounds, getBillStatus, fetchAllRows } from './utils'
 
 export async function exportMilkProduction(startDate, endDate, format = 'xlsx') {
-  const { data, error } = await supabase
+  const data = await fetchAllRows(() => supabase
     .from('cattle_milk_entries')
     .select('date, morning_litres, evening_litres, total_litres, cattle(cattle_id, name, breed, category)')
     .gte('date', startDate)
     .lte('date', endDate)
-    .order('date')
-
-  if (error) throw error
+    .order('date'))
 
   const rows = (data || []).map((r) => ({
     cattle_id: r.cattle?.cattle_id || '',
@@ -90,11 +88,13 @@ export async function exportMonthlyBillStatus(month, format = 'xlsx') {
   // (same fix as billing/daily-entry: eligibility comes from actual data, not the flag).
   const [
     { data: allCustomers, error: custErr },
-    { data: allEntries },
+    allEntries,
     { data: allBills }
   ] = await Promise.all([
     supabase.from('customers').select('*'),
-    supabase.from('daily_entries').select('customer_id, total_qty, amount').gte('date', start).lte('date', end),
+    // Paginated: a month of deliveries exceeds PostgREST's 1000-row cap, and a truncated
+    // read here silently under-states every exported total.
+    fetchAllRows(() => supabase.from('daily_entries').select('customer_id, total_qty, amount').gte('date', start).lte('date', end)),
     supabase.from('bills').select('*').gte('period_start', start).lte('period_end', end)
   ])
 
@@ -176,14 +176,12 @@ export async function exportMonthlyBillStatus(month, format = 'xlsx') {
 }
 
 export async function exportButtermilkProduction(startDate, endDate, format = 'xlsx') {
-  const { data, error } = await supabase
+  const data = await fetchAllRows(() => supabase
     .from('buttermilk_entries')
     .select('date, quantity, rate, amount, customers(customer_id, name, whatsapp_no)')
     .gte('date', startDate)
     .lte('date', endDate)
-    .order('date')
-
-  if (error) throw error
+    .order('date'))
 
   const rows = (data || []).map((b) => ({
     customer_id: b.customers?.customer_id || '',
@@ -202,20 +200,18 @@ export async function exportButtermilkProduction(startDate, endDate, format = 'x
 }
 
 export async function exportCustomerDeliveries(startDate, endDate, format = 'xlsx') {
-  const [{ data: milkData, error }, { data: bmData }] = await Promise.all([
-    supabase
+  const [milkData, bmData] = await Promise.all([
+    fetchAllRows(() => supabase
       .from('daily_entries')
       .select('morning_qty, evening_qty, total_qty, rate, amount, customer_id, customers(customer_id, name, whatsapp_no)')
       .gte('date', startDate)
-      .lte('date', endDate),
-    supabase
+      .lte('date', endDate)),
+    fetchAllRows(() => supabase
       .from('buttermilk_entries')
       .select('customer_id, quantity, amount')
       .gte('date', startDate)
-      .lte('date', endDate)
+      .lte('date', endDate))
   ])
-
-  if (error) throw error
 
   const milkByCustomer = {}
   for (const e of milkData || []) {
@@ -273,14 +269,12 @@ export async function exportCustomerDeliveries(startDate, endDate, format = 'xls
 }
 
 export async function exportProductSales(startDate, endDate, format = 'xlsx') {
-  const { data, error } = await supabase
+  const data = await fetchAllRows(() => supabase
     .from('product_sales')
     .select('*')
     .gte('date', startDate)
     .lte('date', endDate)
-    .order('date')
-
-  if (error) throw error
+    .order('date'))
 
   const rows = (data || []).map((sale) => ({
     date: sale.date,

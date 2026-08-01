@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import axios from 'axios'
-import { getMonthBounds, getBillStatus } from './utils'
+import { getMonthBounds, getBillStatus, fetchAllRows } from './utils'
 import { calculateGst } from './gst'
 import { BACKEND_URL, API_KEY } from './constants'
 
@@ -187,11 +187,13 @@ export async function generateAllMonthlyBills(month, { withRazorpay = true, onPr
   // Not filtered by active — a customer paused mid-month must still be billed for the
   // days they were active. Eligibility is decided purely by whether they have billable
   // entries in this period (see the hasMilk/hasButtermilk check below).
-  const [{ data: customers }, { data: existingBills }, { data: allEntries }, { data: allButtermilk }] = await Promise.all([
+  const [{ data: customers }, { data: existingBills }, allEntries, allButtermilk] = await Promise.all([
     supabase.from('customers').select('*').order('name'),
     supabase.from('bills').select('customer_id').gte('period_start', start).lte('period_end', end),
-    supabase.from('daily_entries').select('*').gte('date', start).lte('date', end).order('date'),
-    supabase.from('buttermilk_entries').select('customer_id, quantity, rate, amount').gte('date', start).lte('date', end)
+    // Paginated: a bare select silently truncates at 1000 rows and would drop the last days
+    // of the month from every bill in this run. See fetchAllRows.
+    fetchAllRows(() => supabase.from('daily_entries').select('*').gte('date', start).lte('date', end).order('date')),
+    fetchAllRows(() => supabase.from('buttermilk_entries').select('customer_id, quantity, rate, amount').gte('date', start).lte('date', end))
   ])
 
   const buttermilkByCustomer = {}
@@ -293,12 +295,10 @@ export async function getMonthlyBillPackages(month) {
 
   if (!bills?.length) return []
 
-  const { data: entries } = await supabase
-    .from('daily_entries')
-    .select('*')
-    .gte('date', start)
-    .lte('date', end)
-    .order('date')
+  // Paginated — truncation here would print PDFs missing the month's final delivery rows.
+  const entries = await fetchAllRows(() =>
+    supabase.from('daily_entries').select('*').gte('date', start).lte('date', end).order('date')
+  )
 
   return bills.map((bill) => ({
     bill,
@@ -313,17 +313,28 @@ export async function loadCustomerMonthStats(customers, month) {
   const ids = customers.map((c) => c.id)
   if (!ids.length) return {}
 
-  const [{ data: entries }, { data: bills }] = await Promise.all([
-    supabase.from('daily_entries').select('customer_id, amount, total_qty').in('customer_id', ids).gte('date', start).lte('date', end),
+  const [entries, bmEntries, { data: bills }] = await Promise.all([
+    fetchAllRows(() => supabase.from('daily_entries').select('customer_id, amount, total_qty').in('customer_id', ids).gte('date', start).lte('date', end)),
+    fetchAllRows(() => supabase.from('buttermilk_entries').select('customer_id, quantity, amount').in('customer_id', ids).gte('date', start).lte('date', end)),
     supabase.from('bills').select('*').in('customer_id', ids).gte('period_start', start).lte('period_end', end)
   ])
 
   const paidMap = await getPaidAmountsForBills((bills || []).map((b) => b.id))
 
   const entryTotals = {}
+  const milkQty = {}
   ;(entries || []).forEach((e) => {
     if (Number(e.total_qty) <= 0) return
     entryTotals[e.customer_id] = (entryTotals[e.customer_id] || 0) + Number(e.amount)
+    milkQty[e.customer_id] = (milkQty[e.customer_id] || 0) + Number(e.total_qty)
+  })
+
+  const bmQty = {}
+  const bmAmount = {}
+  ;(bmEntries || []).forEach((b) => {
+    if (Number(b.quantity) <= 0) return
+    bmQty[b.customer_id] = (bmQty[b.customer_id] || 0) + Number(b.quantity)
+    bmAmount[b.customer_id] = (bmAmount[b.customer_id] || 0) + Number(b.amount || 0)
   })
 
   const billsByCustomer = {}
@@ -333,7 +344,10 @@ export async function loadCustomerMonthStats(customers, month) {
 
   const stats = {}
   customers.forEach((c) => {
-    const monthTotal = entryTotals[c.id] || 0
+    // Bills bill milk + buttermilk together, so the card's month total must include both —
+    // milk-only under-reported the amount for every buttermilk subscriber.
+    const milkAmount = entryTotals[c.id] || 0
+    const monthTotal = milkAmount + (bmAmount[c.id] || 0)
     const bill = billsByCustomer[c.id]
     let status = 'paid'
 
@@ -345,7 +359,14 @@ export async function loadCustomerMonthStats(customers, month) {
       status = 'due'
     }
 
-    stats[c.id] = { monthTotal, status }
+    stats[c.id] = {
+      monthTotal,
+      status,
+      milkAmount,
+      milkQty: milkQty[c.id] || 0,
+      buttermilkQty: bmQty[c.id] || 0,
+      buttermilkAmount: bmAmount[c.id] || 0
+    }
   })
 
   return stats

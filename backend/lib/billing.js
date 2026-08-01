@@ -4,6 +4,31 @@ const { calculateGst } = require('./gst')
 const { getMonthBounds } = require('./format')
 const { razorpay } = require('./razorpay-sync')
 
+/**
+ * Fetch EVERY row of a query, 1000 at a time.
+ *
+ * Supabase/PostgREST silently caps a single response at 1000 rows — success with a short
+ * array, no error. A month of deliveries already exceeds that (July 2026 = 1044 rows), and
+ * with `.order('date')` the cut lands deterministically on the END of the month, so an
+ * unpaginated read under-bills the last days of the period. This runs unattended from cron,
+ * so a silent shortfall here would never be noticed.
+ *
+ * ANY query over daily_entries / buttermilk_entries not narrowed to one customer MUST use this.
+ */
+async function fetchAllRows(makeQuery) {
+  const pageSize = 1000
+  let from = 0
+  let all = []
+  for (;;) {
+    const { data, error } = await makeQuery().range(from, from + pageSize - 1)
+    if (error) throw error
+    all = all.concat(data || [])
+    if (!data || data.length < pageSize) break
+    from += pageSize
+  }
+  return all
+}
+
 function billableEntries(entries) {
   return (entries || []).filter((e) => Number(e.total_qty) > 0 && Number(e.amount) > 0)
 }
@@ -97,11 +122,13 @@ async function generateAllMonthlyBills(month, { withRazorpay = true } = {}) {
   // Not filtered by active — a customer paused mid-month must still be billed for the
   // days they were active. Eligibility is decided purely by whether they have billable
   // entries in this period (see the hasMilk/hasButtermilk check below).
-  const [{ data: customers }, { data: existingBills }, { data: allEntries }, { data: allButtermilk }] = await Promise.all([
+  const [{ data: customers }, { data: existingBills }, allEntries, allButtermilk] = await Promise.all([
     supabase.from('customers').select('*').order('name'),
     supabase.from('bills').select('customer_id').gte('period_start', start).lte('period_end', end),
-    supabase.from('daily_entries').select('*').gte('date', start).lte('date', end).order('date'),
-    supabase.from('buttermilk_entries').select('customer_id, quantity, rate, amount').gte('date', start).lte('date', end)
+    // Paginated: a bare select silently truncates at 1000 rows and would drop the last days
+    // of the month from every bill this run creates. See fetchAllRows.
+    fetchAllRows(() => supabase.from('daily_entries').select('*').gte('date', start).lte('date', end).order('date')),
+    fetchAllRows(() => supabase.from('buttermilk_entries').select('customer_id, quantity, rate, amount').gte('date', start).lte('date', end))
   ])
 
   const buttermilkByCustomer = {}
@@ -161,12 +188,10 @@ async function getMonthlyBillPackages(month) {
 
   if (!bills?.length) return []
 
-  const { data: entries } = await supabase
-    .from('daily_entries')
-    .select('*')
-    .gte('date', start)
-    .lte('date', end)
-    .order('date')
+  // Paginated — truncation here would send PDFs missing the month's final delivery rows.
+  const entries = await fetchAllRows(() =>
+    supabase.from('daily_entries').select('*').gte('date', start).lte('date', end).order('date')
+  )
 
   return bills.map((bill) => ({
     bill,

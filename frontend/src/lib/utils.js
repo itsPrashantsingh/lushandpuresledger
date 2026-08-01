@@ -59,6 +59,45 @@ export function todayISO() {
   return new Date().toISOString().slice(0, 10)
 }
 
+/**
+ * Fetch EVERY row of a Supabase query, 1000 at a time.
+ *
+ * PostgREST silently caps a single response at 1000 rows — it returns success with a short
+ * array rather than erroring, so truncation is invisible. A single month of deliveries
+ * already exceeds that (July 2026 = 1044 rows), and with `.order('date')` the cut lands
+ * deterministically on the END of the month.
+ *
+ * ANY query over a table that can exceed 1000 rows in the queried range MUST go through this
+ * — especially daily_entries / buttermilk_entries when not narrowed to a single customer.
+ * Pass a factory so each page is a fresh query: fetchAllRows(() => supabase.from(...)...)
+ */
+export async function fetchAllRows(makeQuery) {
+  const pageSize = 1000
+  let from = 0
+  let all = []
+  for (;;) {
+    const { data, error } = await makeQuery().range(from, from + pageSize - 1)
+    if (error) throw error
+    all = all.concat(data || [])
+    if (!data || data.length < pageSize) break
+    from += pageSize
+  }
+  return all
+}
+
+/** "2026-07" -> "Jul 2026" */
+export function monthLabel(yearMonth) {
+  const [year, month] = String(yearMonth).split('-').map(Number)
+  return new Date(year, month - 1, 1).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
+}
+
+/** Shift a "YYYY-MM" string by N months (negative = back). */
+export function shiftMonth(yearMonth, delta) {
+  const [year, month] = String(yearMonth).split('-').map(Number)
+  const d = new Date(year, month - 1 + delta, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
 export function daysOverdue(periodEnd) {
   const end = new Date(periodEnd + 'T00:00:00')
   const now = new Date()

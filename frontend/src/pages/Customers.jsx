@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import CustomerCard from '../components/CustomerCard'
-import { currentYearMonth } from '../lib/utils'
+import { currentYearMonth, monthLabel, shiftMonth, formatCurrency } from '../lib/utils'
 import { loadCustomerMonthStats } from '../lib/bills'
 import { parseSpreadsheet, rowsToCustomers, downloadImportTemplate } from '../lib/import-export'
 
@@ -13,6 +13,8 @@ export default function Customers() {
   const [form, setForm] = useState(emptyForm())
   const [customFields, setCustomFields] = useState([{ key: '', value: '' }])
   const [customerStats, setCustomerStats] = useState({})
+  const [month, setMonth] = useState(currentYearMonth())
+  const [statsMonth, setStatsMonth] = useState(null)
   const [loading, setLoading] = useState(true)
   const [importMsg, setImportMsg] = useState('')
   const [importing, setImporting] = useState(false)
@@ -27,12 +29,21 @@ export default function Customers() {
     loadCustomers()
   }, [])
 
+  // Month stats are loaded separately from the customer list so switching months only
+  // refetches the per-month figures, and the cards stay on screen while they update.
+  useEffect(() => {
+    if (!customers.length) return
+    let cancelled = false
+    loadCustomerMonthStats(customers, month)
+      .then((stats) => { if (!cancelled) { setCustomerStats(stats); setStatsMonth(month) } })
+      .catch(() => { if (!cancelled) { setCustomerStats({}); setStatsMonth(month) } })
+    return () => { cancelled = true }
+  }, [customers, month])
+
   async function loadCustomers() {
     setLoading(true)
     const { data } = await supabase.from('customers').select('*').order('name')
-    const stats = await loadCustomerMonthStats(data || [], currentYearMonth())
     setCustomers(data || [])
-    setCustomerStats(stats)
     setLoading(false)
   }
 
@@ -137,6 +148,23 @@ export default function Customers() {
       c.whatsapp_no.includes(search)
   )
 
+  // Derived rather than stored, so the flag can never disagree with the loaded stats.
+  const statsLoading = statsMonth !== month
+
+  // Roll-up across the customers currently listed, so it agrees with the cards on screen.
+  const monthRollup = filtered.reduce(
+    (acc, c) => {
+      const s = customerStats[c.id]
+      if (!s) return acc
+      acc.amount += s.monthTotal || 0
+      acc.milk += s.milkQty || 0
+      acc.buttermilk += s.buttermilkQty || 0
+      if ((s.milkQty || 0) > 0 || (s.buttermilkQty || 0) > 0) acc.receiving += 1
+      return acc
+    },
+    { amount: 0, milk: 0, buttermilk: 0, receiving: 0 }
+  )
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -180,6 +208,48 @@ export default function Customers() {
         className="w-full rounded-lg border border-slate-300 px-4 py-2"
       />
 
+      {/* Month shifter — card figures below are all scoped to this month */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+        <div className="flex items-center gap-1 text-sm font-medium">
+          <button
+            onClick={() => setMonth(shiftMonth(month, -1))}
+            className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-slate-600 hover:bg-slate-50"
+            aria-label="Previous month"
+          >
+            ◀
+          </button>
+          <span className="min-w-[92px] text-center text-slate-800">{monthLabel(month)}</span>
+          <button
+            onClick={() => setMonth(shiftMonth(month, 1))}
+            disabled={month >= currentYearMonth()}
+            className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+            aria-label="Next month"
+          >
+            ▶
+          </button>
+          {month !== currentYearMonth() && (
+            <button
+              onClick={() => setMonth(currentYearMonth())}
+              className="ml-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
+            >
+              This month
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-slate-500">
+          {statsLoading ? (
+            'Updating totals…'
+          ) : (
+            <>
+              <strong className="text-slate-700">{formatCurrency(monthRollup.amount)}</strong>
+              {' · '}{monthRollup.milk.toFixed(1)} L milk
+              {monthRollup.buttermilk > 0 && ` · ${monthRollup.buttermilk.toFixed(1)} L buttermilk`}
+              {' · '}{monthRollup.receiving} receiving
+            </>
+          )}
+        </p>
+      </div>
+
       {loading ? (
         <p className="text-center text-slate-500">Loading...</p>
       ) : (
@@ -190,6 +260,9 @@ export default function Customers() {
               customer={c}
               monthTotal={customerStats[c.id]?.monthTotal || 0}
               status={customerStats[c.id]?.status || 'paid'}
+              milkQty={customerStats[c.id]?.milkQty || 0}
+              buttermilkQty={customerStats[c.id]?.buttermilkQty || 0}
+              monthText={month === currentYearMonth() ? 'this month' : `in ${monthLabel(month)}`}
             />
           ))}
         </div>
