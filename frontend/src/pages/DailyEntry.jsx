@@ -197,17 +197,26 @@ export default function DailyEntry() {
   }
 
   const filtered = customers.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
-  const activeList = filtered.filter((c) => c.active !== false)   // search-filtered, for rendering
-  const inactiveList = filtered.filter((c) => c.active === false)
+  // A customer with a saved entry for this date belongs in the main list even if paused today —
+  // otherwise a past day's deliveries would sit in the "auto-skipped, not billed" section while
+  // still counting toward the day's total. Keeps the list consistent with the stats below.
+  const countsForDay = (c) => entries[c.id]?.saved || c.active !== false
+  const activeList = filtered.filter(countsForDay)                 // search-filtered, for rendering
+  const inactiveList = filtered.filter((c) => !countsForDay(c))
   const isLocked = session.status !== 'unlocked'
   const isFinalized = session.status === 'finalized'
   const statusText = isFinalized ? 'Final saved' : isLocked ? 'Locked' : 'Unlocked'
   const statusClass = isFinalized ? 'bg-blue-100 text-blue-700' : isLocked ? 'bg-slate-800 text-white' : 'bg-amber-100 text-amber-800'
 
-  // Summary stats: computed over ACTIVE customers only (paused are never billed, handled in
-  // their own section) and INDEPENDENT of the search box, so totals reflect the whole day.
+  // Summary stats are INDEPENDENT of the search box, so totals reflect the whole day.
+  // A row counts if it has a SAVED final entry for this date (`e.saved`) — a historical fact
+  // that must never change — or if the customer is currently active (needed while a day is
+  // still being planned and nothing is saved yet). Filtering purely on today's `active` flag
+  // would let pausing a customer now retroactively shrink an already-finalized past day:
+  // e.g. 2026-07-27 read 39.5 L on this page vs 41.5 L in the DB/heatmap, because Brijdas,
+  // Nandlal and Pragya delivered 2.0 L that day and were deactivated afterwards.
   const statRows = customers
-    .filter((c) => c.active !== false)
+    .filter((c) => entries[c.id]?.saved || c.active !== false)
     .map((c) => ({ c, e: entries[c.id] || {} }))
   const isRowDelivered = (e) => e.delivered && (Number(e.morning_qty) + Number(e.evening_qty)) > 0
   const deliveredRows = statRows.filter(({ e }) => isRowDelivered(e))
@@ -222,7 +231,9 @@ export default function DailyEntry() {
     Number(e.rate) !== Number(c.rate)
   )).length
   const activeCount = statRows.length
-  const pausedCount = customers.filter((c) => c.active === false).length
+  // Paused = inactive AND no saved entry for this date. Someone who delivered on this date and
+  // was deactivated later was not paused *that day*, so they belong in the delivered count above.
+  const pausedCount = customers.filter((c) => c.active === false && !entries[c.id]?.saved).length
   const buttermilkSubscribers = statRows.filter(({ c }) => c.buttermilk_required).length
 
   return (
@@ -262,7 +273,7 @@ export default function DailyEntry() {
       />
 
       <div className="mb-3 rounded-lg bg-green-600 px-3 py-2 text-center text-sm font-medium text-white">
-        {totalDelivered.toFixed(1)} L planned · {formatCurrency(totalAmount)}
+        {totalDelivered.toFixed(1)} L {isFinalized ? 'delivered' : 'planned'} · {formatCurrency(totalAmount)}
         <span className="block text-xs font-normal text-green-50">
           {deliveredCount} delivering · {skippedCount} skipped · {customCount} custom · {activeCount} active
           {buttermilkSubscribers > 0 && ` · ${buttermilkSubscribers} buttermilk`}
@@ -287,6 +298,7 @@ export default function DailyEntry() {
                   {c.customer_id && <p className="text-xs font-mono text-slate-400">{c.customer_id}</p>}
                   <div className="flex gap-2 text-[10px]">
                     {e.saved && <span className="text-green-600">final saved</span>}
+                    {c.active === false && <span className="text-slate-400">paused now</span>}
                     {rowCustom && <span className="text-amber-600">custom</span>}
                     {c.buttermilk_required && <span className="text-purple-600">+buttermilk</span>}
                   </div>
@@ -301,11 +313,13 @@ export default function DailyEntry() {
                     {e.delivered ? 'Active' : 'Skip'}
                   </button>
                   <button
-                    onClick={() => setCustomerActive(c.id, false)}
-                    title="Pause this customer — auto-skipped every day until reactivated"
+                    onClick={() => setCustomerActive(c.id, c.active === false)}
+                    title={c.active === false
+                      ? 'Currently paused — reactivate this customer'
+                      : 'Pause this customer — auto-skipped every day until reactivated'}
                     className="rounded-full px-2 py-1 text-[10px] font-medium text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                   >
-                    Pause
+                    {c.active === false ? 'Activate' : 'Pause'}
                   </button>
                 </div>
               </div>

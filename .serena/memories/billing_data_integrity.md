@@ -114,6 +114,25 @@ rows — checked the rest of the current unbounded queries (cattle_milk_entries 
 payments 75, product_sales 20, expenses 149, buttermilk_entries 0) and none are currently at
 risk, but re-check row counts if this bug resurfaces elsewhere.
 
+## FIXED BUG (2026-08-01): today's `active` flag retroactively shrank past day totals
+`frontend/src/pages/DailyEntry.jsx` computed its day summary (`statRows`) over
+`customers.filter(c => c.active !== false)` — i.e. **today's** paused status, applied even when
+viewing a historical finalized date. Pausing a customer therefore silently reduced every past
+day they had delivered on. Confirmed live: 2026-07-27 showed **39.5 L** on Daily Entries vs
+**41.5 L** in `daily_entries` / the Dashboard heatmap; the exact 2.0 L gap was Brijdas (0.5),
+Nandlal (1.0) and Pragya (0.5), all deactivated after that date. Those customers also rendered
+in the "Paused — auto-skipped, not billed" section with no quantities, contradicting the total.
+**Rule now:** a customer counts toward a date if `entries[c.id]?.saved` (a real saved
+`daily_entries` row for that date — a historical fact that must never change) **OR** they are
+currently active (needed while a day is still being planned and nothing is saved yet). Applied
+to `statRows`, to the `activeList`/`inactiveList` render split (via `countsForDay`), and to
+`pausedCount` (inactive AND not saved that date). Rows for such customers show a "paused now"
+badge and an Activate (not Pause) button. Verified: 2026-07-27 now reads 41.5 L / 35 delivering
+/ 33 paused.
+**General principle: never filter historical per-date views by a customer's CURRENT `active`
+flag** — always key off what was saved for that date. `daily_entries` is the immutable record;
+`customers.active` is present-tense state.
+
 ## Payment attribution model (intentional)
 Bills-page per-method totals and Dashboard revenue attribute money by **bill period**
 (`bills.period_start`), NOT by `payments.paid_at`. A June bill paid in July counts toward JUNE.
