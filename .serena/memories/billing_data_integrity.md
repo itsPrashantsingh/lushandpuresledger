@@ -168,6 +168,42 @@ badge and an Activate (not Pause) button. Verified: 2026-07-27 now reads 41.5 L 
 flag** — always key off what was saved for that date. `daily_entries` is the immutable record;
 `customers.active` is present-tense state.
 
+## FIXED (2026-08-02): duplicate WhatsApp numbers had no guard anywhere
+No unique constraint on `customers.whatsapp_no` and no app-level check. Found via this gap:
+**Sharma ji (CUS-0129) and Mahendra Sharma (CUS-0130)** — same phone, same address, created
+119 SECONDS apart on 2026-07-01 — the same person entered twice. Sharma ji had zero real
+history in any table (daily_entries/bills/payments/buttermilk_entries all 0), so it was purely
+a duplicate; renamed to `Sharma ji (duplicate — see Mahendra Sharma CUS-0130)`, kept `active:
+false`, and tagged via `custom_fields.duplicate_of = 'CUS-0130'` so it's unmistakable and never
+gets reactivated by accident. This duplicate record is the most likely reason "Sharma ji" kept
+generating phantom entries in the Jul 16/18 incidents above — it should never have existed as a
+separate active-seedable customer at all.
+Separately, `1234567890` is used as a placeholder by 10 customers (8 paused, but **2 currently
+active**: Kiran Dube CUS-0142, Tanushree CUS-0144) — those two can never receive a WhatsApp
+send since it's not a real number. Not yet resolved; get their real numbers when possible.
+**Fix:** added a duplicate-number check (blocks save, not just a warning) in three places:
+`frontend/src/pages/Customers.jsx` `handleSave` (Add/Edit modal, checks against the already-
+loaded `customers` list), `frontend/src/pages/CustomerDetail.jsx` `handleSaveEdit` (queries
+Supabase directly since this page only holds one customer), and `handleImport` (checks the
+whole imported batch both against existing customers AND against itself, rejecting the entire
+batch with a full list of conflicts rather than partially importing). No DB-level unique
+constraint was added — the guard is app-level only, so a direct SQL insert could still bypass it.
+
+## TRAP: deleting phantom `daily_entries` without fixing `daily_entry_drafts` — they come back
+Deleting a bad row from `daily_entries` alone does NOT fix the problem if the same date still
+has a `daily_entry_drafts` row with `delivered=true` for that customer — the next unlock+finalize
+on that date regenerates it, because `/finalize` rebuilds `daily_entries` from
+`saveDraftEntries`/drafts, not from what's already in `daily_entries`. Hit this exactly on
+2026-08-02: deleted 19 phantom Jul-18 rows via SQL (see incident below), then the admin
+unlocked/re-finalized Jul 16 and Jul 18 repeatedly while manually skipping customers one at a
+time (~40 unlock→skip→finalize cycles in `activity_logs`) — every finalize before a given
+customer was reached regenerated that customer's phantom row from the stale draft.
+**Rule: when deleting bad rows from `daily_entries` directly in SQL, ALWAYS also correct the
+matching `daily_entry_drafts` rows for the same customer+date** (`delivered=false,
+morning_qty=0, evening_qty=0`) — otherwise the fix is temporary and silently undone by the next
+finalize. Also true for any admin-side skip: the UI's "Skip" button already does this correctly
+(it's an app-level save), so this trap is SQL-only intervention.
+
 ## Convention (2026-08-01): show skipped days as 0, never omit them
 A skipped day simply has **no `daily_entries` row**, so any list built straight from the rows
 silently makes the month look shorter than it was. Real confusion this caused: Brijdas
@@ -185,6 +221,14 @@ Two fixes in `frontend/src/pages/CustomerDetail.jsx`:
    maps the **same** array with a `status` column, so sheet and screen reconcile row-for-row.
    Zero rows contribute nothing, so totals/billing are unchanged.
 **Keep display and export driven off one shared array** — they drifted apart before.
+
+## Incident (2026-08-02): Jul 16 & Jul 18 phantom entries, round 2 (see TRAP above)
+20 rows removed total: the same 19 Jul-18 customers as before (they'd regenerated — see TRAP),
+plus **Sharma ji (CUS-0129)**, found on both Jul 16 and Jul 18 with the identical signature
+(exact default qty/rate, no other July deliveries) but not in the user's original 23-name list.
+Backup: `_backup_jul_phantom_round2`. This time both `daily_entries` AND `daily_entry_drafts`
+were corrected, so it should not regenerate again. Jul 16 now 36 customers/40.0L, Jul 18 now
+35 customers/40.5L — both in line with neighbouring days (33–37 range).
 
 ## Payment attribution model (intentional)
 Bills-page per-method totals and Dashboard revenue attribute money by **bill period**

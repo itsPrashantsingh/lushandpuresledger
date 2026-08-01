@@ -240,6 +240,18 @@ export default function CustomerDetail() {
       setEditPhoneError('WhatsApp number must be exactly 10 digits')
       return
     }
+    // Two customers sharing a number is how a duplicate record slipped in undetected before
+    // (same person entered twice, 119s apart) — block it at save time instead.
+    const { data: dupe } = await supabase
+      .from('customers')
+      .select('name, customer_id')
+      .eq('whatsapp_no', digits)
+      .neq('id', id)
+      .maybeSingle()
+    if (dupe) {
+      setEditPhoneError(`This number is already used by "${dupe.name}" (${dupe.customer_id})`)
+      return
+    }
     setEditPhoneError('')
     const custom_fields = {}
     editCustomFields.forEach(({ key, value }) => { if (key.trim()) custom_fields[key.trim()] = value })

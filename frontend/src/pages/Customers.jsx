@@ -77,18 +77,38 @@ export default function Customers() {
 
     try {
       const rows = await parseSpreadsheet(file)
-      const customers = rowsToCustomers(rows)
+      const imported = rowsToCustomers(rows)
 
-      if (!customers.length) {
+      if (!imported.length) {
         setImportMsg('No valid rows found. Need name + 10-digit WhatsApp number.')
         setImporting(false)
         return
       }
 
-      const { error } = await supabase.from('customers').insert(customers)
+      // Duplicate numbers have slipped in via import before (same person entered twice
+      // with a placeholder number) — reject the whole batch rather than half-import it,
+      // so it's obvious something needs fixing in the sheet before retrying.
+      const existingByPhone = new Map(customers.map((c) => [c.whatsapp_no, c]))
+      const seenInFile = new Map()
+      const problems = []
+      for (const c of imported) {
+        const existing = existingByPhone.get(c.whatsapp_no)
+        if (existing) problems.push(`${c.name} — number already used by ${existing.name} (${existing.customer_id || existing.id})`)
+        const dupeInFile = seenInFile.get(c.whatsapp_no)
+        if (dupeInFile) problems.push(`${c.name} — same number as ${dupeInFile} elsewhere in this file`)
+        seenInFile.set(c.whatsapp_no, c.name)
+      }
+      if (problems.length) {
+        setImportMsg(`Import stopped — duplicate WhatsApp numbers found:\n${problems.join('\n')}`)
+        setImporting(false)
+        if (fileRef.current) fileRef.current.value = ''
+        return
+      }
+
+      const { error } = await supabase.from('customers').insert(imported)
       if (error) throw error
 
-      setImportMsg(`Imported ${customers.length} customers ✓`)
+      setImportMsg(`Imported ${imported.length} customers ✓`)
       loadCustomers()
     } catch (err) {
       setImportMsg('Import failed: ' + err.message)
@@ -123,6 +143,13 @@ export default function Customers() {
     const digits = form.whatsapp_no.replace(/\D/g, '')
     if (digits.length !== 10) {
       setPhoneError('WhatsApp number must be exactly 10 digits')
+      return
+    }
+    // Two customers sharing a number is how a duplicate record slipped in undetected before
+    // (same person entered twice, 119s apart) — block it at save time instead.
+    const dupe = customers.find((c) => c.whatsapp_no === digits && c.id !== editing?.id)
+    if (dupe) {
+      setPhoneError(`This number is already used by "${dupe.name}" (${dupe.customer_id || dupe.id})`)
       return
     }
     setPhoneError('')
@@ -210,7 +237,7 @@ export default function Customers() {
       </div>
 
       {importMsg && (
-        <p className={`text-sm ${importMsg.includes('failed') || importMsg.includes('No valid') ? 'text-red-600' : 'text-green-600'}`}>
+        <p className={`whitespace-pre-line text-sm ${importMsg.includes('failed') || importMsg.includes('No valid') || importMsg.includes('stopped') ? 'text-red-600' : 'text-green-600'}`}>
           {importMsg}
         </p>
       )}
