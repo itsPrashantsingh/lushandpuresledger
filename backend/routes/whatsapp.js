@@ -160,15 +160,21 @@ router.get('/summary', async (req, res, next) => {
     const startTs = `${start}T00:00:00`
     const endTs = `${end}T23:59:59`
 
-    const [billsRes, msgsRes, failuresRes, runRes, balance] = await Promise.all([
+    const [billsRes, failuresRes, runRes, balance] = await Promise.all([
       supabase.from('bills').select('id, total_amount, sent_at').gte('period_start', start).lte('period_end', end),
-      supabase.from('whatsapp_messages').select('message_type, status').gte('created_at', startTs).lte('created_at', endTs),
       supabase.from('whatsapp_messages').select('id, to_phone, message_type, error, created_at, customers(name, customer_id)').in('status', ['failed', 'invalid_number']).gte('created_at', startTs).lte('created_at', endTs).order('created_at', { ascending: false }).limit(50),
       supabase.from('automation_runs').select('*').order('ran_at', { ascending: false }).limit(5),
       getProvider().getBalance()
     ])
 
     const bills = billsRes.data || []
+    // Bill-related WhatsApp messages (bill/reminders/cutoff/acks) are attributed to the
+    // *bill's own period* (matching the period-attribution rule used across the app), not the
+    // calendar date they were actually sent — so a June bill sent in July still counts as June.
+    const billIds = bills.map((b) => String(b.id))
+    const msgsRes = billIds.length
+      ? await supabase.from('whatsapp_messages').select('message_type, status').in('entity_id', billIds)
+      : { data: [] }
     const msgs = msgsRes.data || []
     const count = (pred) => msgs.filter(pred).length
 

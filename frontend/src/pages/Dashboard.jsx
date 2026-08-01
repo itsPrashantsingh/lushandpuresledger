@@ -19,6 +19,24 @@ import { getPaidAmountsForBills, markCashPayment, reconcileRazorpayPayments, wak
 import { buildPaymentDueMessage } from '../lib/messages'
 import { sendTextViaApi } from '../lib/whatsapp-api'
 
+// Supabase/PostgREST caps a single response at 1000 rows. daily_entries already exceeds
+// that lifetime, so an unbounded select silently drops rows past the 1000th (in whatever
+// order Postgres happens to scan them) — this is what caused finalized days to show as
+// missing/undercounted on the deliveries chart & heatmap. Page through with .range() instead.
+async function fetchAllRows(makeQuery) {
+  const pageSize = 1000
+  let from = 0
+  let all = []
+  while (true) {
+    const { data, error } = await makeQuery().range(from, from + pageSize - 1)
+    if (error) throw error
+    all = all.concat(data || [])
+    if (!data || data.length < pageSize) break
+    from += pageSize
+  }
+  return { data: all }
+}
+
 function monthLabelOf(fromDate) {
   if (!fromDate) return 'All time'
   const [y, m] = fromDate.split('-').map(Number)
@@ -161,8 +179,8 @@ export default function Dashboard() {
       paymentsRes, productSalesRes, billsRes, cattleEntriesRes, deliveredRes,
       expensesRes, allPaymentsRes, allProductSalesRes, allExpensesRes,
       cattleEntries30Res, activeCustomersRes, activeCattleRes,
-      allCattleEntriesRes, allDeliveredRes, cattleListRes,
-      allMilkDeliveriesRes, allBmDeliveriesRes
+      allCattleEntriesRes, allDailyEntriesRes, cattleListRes,
+      allBmDeliveriesRes
     ] = await Promise.all([
       supabase.from('payments').select('amount').gte('paid_at', start).lte('paid_at', end + 'T23:59:59'),
       supabase.from('product_sales').select('total_amount').gte('date', start).lte('date', end).eq('paid', true),
@@ -177,9 +195,8 @@ export default function Dashboard() {
       supabase.from('customers').select('id', { count: 'exact', head: true }).eq('active', true),
       supabase.from('cattle').select('id', { count: 'exact', head: true }).eq('active', true),
       supabase.from('cattle_milk_entries').select('total_litres, date, cattle_id'),
-      supabase.from('daily_entries').select('total_qty, date'),
+      fetchAllRows(() => supabase.from('daily_entries').select('total_qty, amount, morning_qty, evening_qty, date')),
       supabase.from('cattle').select('id, name, cattle_id').eq('active', true).order('name'),
-      supabase.from('daily_entries').select('amount, morning_qty, evening_qty, date'),
       supabase.from('buttermilk_entries').select('amount, date')
     ])
 
@@ -222,10 +239,10 @@ export default function Dashboard() {
 
     // Store raw SVP data — recomputed in useEffect when the SVP date range changes
     setRawCattleEntries(allCattleEntriesRes.data || [])
-    setRawDailyEntries(allDeliveredRes.data || [])
+    setRawDailyEntries(allDailyEntriesRes.data || [])
 
     // Store raw revenue data — recomputed in useEffect when date range changes
-    setRawMilkDeliveries(allMilkDeliveriesRes.data || [])
+    setRawMilkDeliveries(allDailyEntriesRes.data || [])
     setRawBmDeliveries(allBmDeliveriesRes.data || [])
     setRawProductSalesAll(allProductSalesRes.data || [])
     setRawExpensesAll(allExpensesRes.data || [])
@@ -249,7 +266,7 @@ export default function Dashboard() {
     const months = last6Months()
     const revData = months.map((m) => {
       const { start: ms, end: me } = getMonthBounds(m.key)
-      const milkRev = (allMilkDeliveriesRes.data || []).filter((e) => e.date >= ms && e.date <= me).reduce((s, e) => s + Number(e.amount), 0)
+      const milkRev = (allDailyEntriesRes.data || []).filter((e) => e.date >= ms && e.date <= me).reduce((s, e) => s + Number(e.amount), 0)
       const productRev = (allProductSalesRes.data || []).filter((p) => p.date >= ms && p.date <= me).reduce((s, p) => s + Number(p.total_amount), 0)
       const exp = (allExpensesRes.data || []).filter((e) => e.date >= ms && e.date <= me).reduce((s, e) => s + Number(e.amount), 0)
       return { month: m.label, revenue: milkRev + productRev, milkRevenue: milkRev, productRevenue: productRev, expenses: exp }

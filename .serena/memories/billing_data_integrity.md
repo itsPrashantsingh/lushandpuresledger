@@ -75,6 +75,45 @@ an extra warning line if the selected month hasn't ended yet (`month >= currentY
 This is a manual-UI-only guard — `backend/lib/whatsapp/scheduler.js` (the automated cron
 generation/send) was deliberately left untouched, per explicit user instruction.
 
+## FIXED BUG (2026-08-01): Automation tab message counts used send date, not bill period
+`GET /api/whatsapp/summary` (`backend/routes/whatsapp.js`) scoped bill counts by
+`bills.period_start/period_end` (correct) but scoped `whatsapp_messages` counts (bills sent,
+delivered, read, failed, reminders, acknowledgements) by `whatsapp_messages.created_at` — the
+actual send date. So a June bill sent/reminded in July counted under July, contradicting the
+period-attribution rule used everywhere else. Confirmed live: two payment_reminder_t1 sent
+2026-07-31 for BILL-196/BILL-166 (both period_start=2026-06-01) were showing under July.
+**Fix:** message counts now join `whatsapp_messages.entity_id` → `bills.id` and are filtered to
+bills whose period falls in the queried month (fetch bills for the period first, then
+`whatsapp_messages` where `entity_id in (those bill ids)`, no `created_at` filter). Applies to
+message_types bill/payment_reminder_t1/t2/supply_cutoff/bill_carryforward/cash_received/
+razorpay_received — all of which use the bill id as `entity_id` (`product_sale` uses a
+product_sales id and isn't part of this summary). The failures panel and `automation_runs`
+("recent runs") intentionally stay scoped by `created_at`/`ran_at` — those are operational logs
+of "what broke recently", not revenue figures, so send-date framing is correct there.
+
+## FIXED BUG (2026-08-01): Dashboard silently truncated daily_entries past 1000 rows
+`daily_entries` passed 1000 total rows (1160 as of 2026-07-31). Two Dashboard queries fetched
+the **entire table with no filter and no `.range()`** — `supabase.from('daily_entries').select(...)`
+for both `rawDailyEntries` (Supply vs Production) and `rawMilkDeliveries` (Daily Deliveries
+chart/heatmap + Revenue & Profit milk figure + 6-month Revenue trend). Supabase/PostgREST caps
+a single response at 1000 rows by default, and with no `ORDER BY` the cutoff falls wherever the
+query planner's scan happens to stop — **not** cleanly by date. Verified live: the truncated
+query returned 2026-07-25 only partially (13 of 37 rows), **dropped 2026-07-26/27/28 entirely**,
+and returned 2026-07-29 with only 2 of 36 rows — despite all of those days being fully finalized.
+This is exactly why the Dashboard's deliveries chart/heatmap disagreed with what Daily Entries
+showed as saved: the heatmap would render those days as unsaved/near-empty (dashed grey or a
+tiny green box) purely because of client-side pagination, not any real data problem. The bug
+shifts to different dates over time as more rows are added past the 1000 mark — it is not
+specific to July.
+**Fix:** added `fetchAllRows(makeQuery)` in `frontend/src/pages/Dashboard.jsx` — pages through
+`.range()` in chunks of 1000 until a short page is returned — and replaced both unbounded
+`daily_entries` queries with one paginated fetch (`allDailyEntriesRes`) feeding both
+`rawDailyEntries` and `rawMilkDeliveries`. **Any other unbounded (no date-range-filtered) query
+added later must use this same pagination helper** once its table can plausibly exceed 1000
+rows — checked the rest of the current unbounded queries (cattle_milk_entries 670,
+payments 75, product_sales 20, expenses 149, buttermilk_entries 0) and none are currently at
+risk, but re-check row counts if this bug resurfaces elsewhere.
+
 ## Payment attribution model (intentional)
 Bills-page per-method totals and Dashboard revenue attribute money by **bill period**
 (`bills.period_start`), NOT by `payments.paid_at`. A June bill paid in July counts toward JUNE.
