@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { createBill, getPaidAmountForBill, createRazorpayLink, billableEntries, entrySubtotal } from '../lib/bills'
 import { openBillPdf } from '../lib/pdf'
@@ -11,15 +11,29 @@ import {
   formatDate,
   formatQty,
   currentYearMonth,
-  getMonthBounds
+  getMonthBounds,
+  todayISO
 } from '../lib/utils'
 import { downloadWorkbook, downloadCsv } from '../lib/import-export'
 
 export default function CustomerDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [customer, setCustomer] = useState(null)
-  const [month, setMonth] = useState(currentYearMonth())
+  // Opens on the month carried over from the Customers list (?month=YYYY-MM), so you don't
+  // have to re-pick it here. Kept in the URL so refresh and back/forward preserve it too.
+  const [month, setMonthState] = useState(() => {
+    const fromUrl = searchParams.get('month')
+    return /^\d{4}-\d{2}$/.test(fromUrl || '') ? fromUrl : currentYearMonth()
+  })
+
+  function setMonth(next) {
+    setMonthState(next)
+    const params = new URLSearchParams(searchParams)
+    params.set('month', next)
+    setSearchParams(params, { replace: true })
+  }
   const [entries, setEntries] = useState([])
   const [payments, setPayments] = useState([])
   const [summary, setSummary] = useState({ litres: 0, amount: 0, paid: 0, due: 0 })
@@ -122,6 +136,42 @@ export default function CustomerDetail() {
     setSummary({ litres, amount, paid, due })
     setLoading(false)
   }
+
+  // Calendar days in the selected month — lets the delivery table show "30 of 31 days",
+  // so a skipped day (which simply has no row) is visible instead of having to be inferred.
+  const daysInMonth = (() => {
+    const [y, m] = month.split('-').map(Number)
+    return new Date(y, m, 0).getDate()
+  })()
+
+  // Every day of the month, with skipped days shown as 0 rather than omitted — a missing
+  // row is invisible and makes the month look shorter than it was. Days with no delivery
+  // carry zero qty/amount, so totals and billing are unaffected. Used by BOTH the table
+  // and the export so the two always agree. The current month stops at today rather than
+  // listing future dates as zero-delivery days.
+  const monthRows = (() => {
+    const [y, m] = month.split('-').map(Number)
+    const byDate = {}
+    for (const e of entries) byDate[e.date] = e
+    const today = todayISO()
+    const rows = []
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+      if (date > today) break
+      const e = byDate[date]
+      rows.push({
+        key: e?.id || `skipped-${date}`,
+        date,
+        delivered: Boolean(e),
+        morning_qty: Number(e?.morning_qty || 0),
+        evening_qty: Number(e?.evening_qty || 0),
+        total_qty: Number(e?.total_qty || 0),
+        rate: Number(e?.rate ?? customer?.rate ?? 0),
+        amount: Number(e?.amount || 0)
+      })
+    }
+    return rows
+  })()
 
   function validEntriesForBill() {
     return (entries.length > 0 && entrySubtotal(entries) > 0) || buttermilkTotal.subtotal > 0
@@ -241,22 +291,25 @@ export default function CustomerDetail() {
   }
 
   function exportMonthEntries(format) {
-    const rows = entries.map((e) => {
+    // Exports the same full-month list the table shows — every day present, skipped days
+    // as 0 with status "skipped" — so the sheet reconciles row-for-row with the screen.
+    const rows = monthRows.map((e) => {
       const bm = buttermilkByDate[e.date]
       const row = {
         date: e.date,
-        morning_litres: Number(e.morning_qty),
-        evening_litres: Number(e.evening_qty),
-        total_milk_litres: Number(e.total_qty),
-        milk_rate: Number(e.rate),
-        milk_amount: Number(e.amount)
+        status: e.delivered ? 'delivered' : 'skipped',
+        morning_litres: e.morning_qty,
+        evening_litres: e.evening_qty,
+        total_milk_litres: e.total_qty,
+        milk_rate: e.rate,
+        milk_amount: e.amount
       }
       if (customer.buttermilk_required) {
         row.buttermilk_litres = bm ? Number(bm.quantity) : 0
         row.buttermilk_rate = bm ? Number(bm.rate) : 0
         row.buttermilk_amount = bm ? Number(bm.amount) : 0
       }
-      row.day_total = Number(e.amount) + (bm ? Number(bm.amount) : 0)
+      row.day_total = e.amount + (bm ? Number(bm.amount) : 0)
       return row
     })
     const safeName = customer.name.replace(/\s+/g, '_')
@@ -276,7 +329,8 @@ export default function CustomerDetail() {
           subtitle={`For ${customer.name}`}
         />
       )}
-      <Link to="/customers" className="text-sm text-green-600 hover:underline">← Back to Customers</Link>
+      {/* Carries the month back too, so the list returns to the month you came from. */}
+      <Link to={`/customers?month=${month}`} className="text-sm text-green-600 hover:underline">← Back to Customers</Link>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex items-start justify-between gap-3">
@@ -422,34 +476,50 @@ export default function CustomerDetail() {
                 </tr>
               </thead>
               <tbody>
-                {entries.map((e) => {
+                {monthRows.map((e) => {
                   const bm = buttermilkByDate[e.date]
                   return (
-                    <tr key={e.id} className="border-b border-slate-100">
-                      <td className="py-2 pr-3">{formatDate(e.date)}</td>
+                    <tr
+                      key={e.key}
+                      className={`border-b border-slate-100 ${e.delivered ? '' : 'bg-slate-50 text-slate-400'}`}
+                    >
+                      <td className="py-2 pr-3">
+                        {formatDate(e.date)}
+                        {!e.delivered && <span className="ml-1.5 text-xs">· skipped</span>}
+                      </td>
                       <td className="py-2 pr-3">{formatQty(e.morning_qty)}L</td>
                       <td className="py-2 pr-3">{formatQty(e.evening_qty)}L</td>
                       <td className="py-2 pr-3">{formatQty(e.total_qty)}L</td>
                       {customer.buttermilk_required && (
-                        <td className="py-2 pr-3 text-purple-700">{bm ? `${formatQty(bm.quantity)}L` : '—'}</td>
+                        <td className={`py-2 pr-3 ${e.delivered ? 'text-purple-700' : ''}`}>
+                          {bm ? `${formatQty(bm.quantity)}L` : formatQty(0) + 'L'}
+                        </td>
                       )}
-                      <td className="py-2">{formatCurrency(Number(e.amount) + (bm?.amount || 0))}</td>
+                      <td className="py-2">{formatCurrency(e.amount + (bm?.amount || 0))}</td>
                     </tr>
                   )
                 })}
               </tbody>
-              {buttermilkTotal.totalQty > 0 && (
-                <tfoot>
-                  <tr className="border-t border-slate-200 font-medium text-slate-700">
-                    <td className="pt-2 pr-3">Total</td>
-                    <td className="pt-2 pr-3" />
-                    <td className="pt-2 pr-3" />
-                    <td className="pt-2 pr-3">{summary.litres.toFixed(1)}L</td>
+              {/* Always shown. This total used to render only for buttermilk customers, so
+                  most delivery tables had no total at all and had to be added up by eye —
+                  which invites miscounting the delivery days (a skipped day has no row). */}
+              <tfoot>
+                <tr className="border-t-2 border-slate-300 font-semibold text-slate-800">
+                  <td className="pt-2 pr-3">
+                    Total
+                    <span className="ml-1 font-normal text-slate-500">
+                      ({entries.length} of {daysInMonth} days delivered)
+                    </span>
+                  </td>
+                  <td className="pt-2 pr-3">{formatQty(monthRows.reduce((s, e) => s + e.morning_qty, 0))}L</td>
+                  <td className="pt-2 pr-3">{formatQty(monthRows.reduce((s, e) => s + e.evening_qty, 0))}L</td>
+                  <td className="pt-2 pr-3">{summary.litres.toFixed(1)}L</td>
+                  {customer.buttermilk_required && (
                     <td className="pt-2 pr-3 text-purple-700">{buttermilkTotal.totalQty.toFixed(1)}L</td>
-                    <td className="pt-2">{formatCurrency(summary.amount + buttermilkTotal.subtotal)}</td>
-                  </tr>
-                </tfoot>
-              )}
+                  )}
+                  <td className="pt-2">{formatCurrency(summary.amount + buttermilkTotal.subtotal)}</td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}

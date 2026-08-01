@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import CustomerCard from '../components/CustomerCard'
 import { currentYearMonth, monthLabel, shiftMonth, formatCurrency } from '../lib/utils'
@@ -6,6 +7,7 @@ import { loadCustomerMonthStats } from '../lib/bills'
 import { parseSpreadsheet, rowsToCustomers, downloadImportTemplate } from '../lib/import-export'
 
 export default function Customers() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [customers, setCustomers] = useState([])
   const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
@@ -13,9 +15,22 @@ export default function Customers() {
   const [form, setForm] = useState(emptyForm())
   const [customFields, setCustomFields] = useState([{ key: '', value: '' }])
   const [customerStats, setCustomerStats] = useState({})
-  const [month, setMonth] = useState(currentYearMonth())
+  // Restored from ?month=YYYY-MM when returning from a customer profile, so the list comes
+  // back to the month you were reviewing instead of jumping to the current one.
+  const [month, setMonthState] = useState(() => {
+    const fromUrl = searchParams.get('month')
+    return /^\d{4}-\d{2}$/.test(fromUrl || '') ? fromUrl : currentYearMonth()
+  })
   const [statsMonth, setStatsMonth] = useState(null)
   const [loading, setLoading] = useState(true)
+
+  function setMonth(next) {
+    setMonthState(next)
+    const params = new URLSearchParams(searchParams)
+    params.set('month', next)
+    setSearchParams(params, { replace: true })
+  }
+
   const [importMsg, setImportMsg] = useState('')
   const [importing, setImporting] = useState(false)
   const [phoneError, setPhoneError] = useState('')
@@ -263,6 +278,7 @@ export default function Customers() {
               milkQty={customerStats[c.id]?.milkQty || 0}
               buttermilkQty={customerStats[c.id]?.buttermilkQty || 0}
               monthText={month === currentYearMonth() ? 'this month' : `in ${monthLabel(month)}`}
+              month={month}
             />
           ))}
         </div>

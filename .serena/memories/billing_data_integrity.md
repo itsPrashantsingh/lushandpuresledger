@@ -168,6 +168,24 @@ badge and an Activate (not Pause) button. Verified: 2026-07-27 now reads 41.5 L 
 flag** — always key off what was saved for that date. `daily_entries` is the immutable record;
 `customers.active` is present-tense state.
 
+## Convention (2026-08-01): show skipped days as 0, never omit them
+A skipped day simply has **no `daily_entries` row**, so any list built straight from the rows
+silently makes the month look shorter than it was. Real confusion this caused: Brijdas
+(CUS-0077) has 30 July rows × 0.5 L = **15.0 L** — the Customers card was correct — but the
+profile listed 30 rows with no total, the user read it as "0.5 × 31 days" and expected 15.5.
+Jul 17 was genuinely absent (the day 55 customers were skipped).
+Two fixes in `frontend/src/pages/CustomerDetail.jsx`:
+1. The delivery table's `<tfoot>` total **used to render only when the customer had buttermilk**
+   (`buttermilkTotal.totalQty > 0`). `buttermilk_entries` is empty table-wide, so in practice
+   **no customer ever saw a total**. It now always renders, with morning/evening/total sums and
+   an "(N of M days delivered)" count.
+2. `monthRows` derives one row per calendar day of the month, merging the real entry or filling
+   zeros with `delivered: false` (current month stops at today, never lists future dates).
+   The table renders it (skipped days greyed, marked "· skipped") and `exportMonthEntries`
+   maps the **same** array with a `status` column, so sheet and screen reconcile row-for-row.
+   Zero rows contribute nothing, so totals/billing are unchanged.
+**Keep display and export driven off one shared array** — they drifted apart before.
+
 ## Payment attribution model (intentional)
 Bills-page per-method totals and Dashboard revenue attribute money by **bill period**
 (`bills.period_start`), NOT by `payments.paid_at`. A June bill paid in July counts toward JUNE.

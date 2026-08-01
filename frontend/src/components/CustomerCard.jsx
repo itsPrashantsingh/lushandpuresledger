@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { formatCurrency } from '../lib/utils'
 
-export default function CustomerCard({ customer, monthTotal, status, milkQty = 0, buttermilkQty = 0, monthText = 'this month' }) {
+export default function CustomerCard({ customer, monthTotal, status, milkQty = 0, buttermilkQty = 0, monthText = 'this month', month }) {
   const badge = {
     paid: 'bg-green-100 text-green-700',
     partial: 'bg-amber-100 text-amber-700',
@@ -11,7 +11,9 @@ export default function CustomerCard({ customer, monthTotal, status, milkQty = 0
 
   return (
     <Link
-      to={`/customers/${customer.id}`}
+      // Carry the selected month into the profile so it opens on the month you were
+      // looking at, instead of resetting to the current one.
+      to={month ? `/customers/${customer.id}?month=${month}` : `/customers/${customer.id}`}
       className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-green-300 hover:shadow-md"
     >
       <div className="flex items-start justify-between gap-2">
