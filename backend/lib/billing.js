@@ -163,21 +163,30 @@ async function generateAllMonthlyBills(month, { withRazorpay = true } = {}) {
     eligible.push({ customer, entries, buttermilkData: bm })
   }
 
-  for (const { customer, entries, buttermilkData } of eligible) {
-    try {
-      const bill = await createBill(customer.id, start, end, entries, buttermilkData)
-      results.created.push(bill.id)
-      if (withRazorpay && Number(bill.total_amount) > 0) {
-        try {
-          await createRazorpayLink(bill, customer)
-          results.razorpay.push(bill.id)
-        } catch (err) {
-          results.errors.push({ customer: customer.name, error: 'Razorpay: ' + err.message })
+  // Same batching as frontend/src/lib/bills.js generateAllMonthlyBills — sequential
+  // processing meant every customer waited for the previous one's full Razorpay API
+  // round trip before starting. bill_seq (next_bill_id RPC) is a Postgres sequence, so
+  // concurrent createBill calls can't collide on bill IDs. 5 is conservative against
+  // Razorpay's own rate limit.
+  const BATCH_SIZE = 5
+  for (let batchStart = 0; batchStart < eligible.length; batchStart += BATCH_SIZE) {
+    const batch = eligible.slice(batchStart, batchStart + BATCH_SIZE)
+    await Promise.all(batch.map(async ({ customer, entries, buttermilkData }) => {
+      try {
+        const bill = await createBill(customer.id, start, end, entries, buttermilkData)
+        results.created.push(bill.id)
+        if (withRazorpay && Number(bill.total_amount) > 0) {
+          try {
+            await createRazorpayLink(bill, customer)
+            results.razorpay.push(bill.id)
+          } catch (err) {
+            results.errors.push({ customer: customer.name, error: 'Razorpay: ' + err.message })
+          }
         }
+      } catch (err) {
+        results.errors.push({ customer: customer.name, error: err.message })
       }
-    } catch (err) {
-      results.errors.push({ customer: customer.name, error: err.message })
-    }
+    }))
   }
 
   return results

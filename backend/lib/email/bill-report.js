@@ -1,3 +1,4 @@
+const JSZip = require('jszip')
 const { sendMail } = require('./index')
 
 function money(n) {
@@ -26,7 +27,7 @@ function buildReportHtml(month, items) {
 
   return `<div style="font-family:Arial,sans-serif;color:#1e293b">
     <h2 style="color:#15803d">Bills for ${monthLabel(month)}</h2>
-    <p>${items.length} bill(s) generated · Total <strong>${money(total)}</strong>. Each bill PDF is attached.</p>
+    <p>${items.length} bill(s) generated · Total <strong>${money(total)}</strong>. All bill PDFs are attached as a single zip file.</p>
     <table style="border-collapse:collapse;width:100%;font-size:14px">
       <thead>
         <tr style="text-align:left;color:#64748b">
@@ -43,26 +44,34 @@ function buildReportHtml(month, items) {
 }
 
 /**
- * Email the month's bills to the owner, every bill PDF attached.
+ * Email the month's bills to the owner as ONE zip attachment.
+ *
+ * Previously every bill PDF was attached separately — with 70+ bills that's 70+ MIME
+ * parts in one SMTP message, which was timing out against Hostinger's server. Zipping
+ * them into a single attachment sends one file instead.
  * @param {object} p { to, month, items:[{ bill, pdfBuffer(Buffer), filename }] }
  */
 async function sendBillsReport({ to, month, items }) {
   if (!to) return { ok: false, error: 'No recipient email configured' }
   if (!items?.length) return { ok: false, error: 'No bills to email' }
 
-  const attachments = items
-    .filter((it) => it.pdfBuffer)
-    .map((it) => ({
-      filename: it.filename || `${it.bill.id}.pdf`,
-      content: it.pdfBuffer,
-      contentType: 'application/pdf'
-    }))
+  const withPdf = items.filter((it) => it.pdfBuffer)
+
+  const zip = new JSZip()
+  for (const it of withPdf) {
+    zip.file(it.filename || `${it.bill.id}.pdf`, it.pdfBuffer)
+  }
+  const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
 
   return sendMail({
     to,
     subject: `Bills for ${monthLabel(month)} — ${items.length} bill(s)`,
     html: buildReportHtml(month, items),
-    attachments
+    attachments: [{
+      filename: `bills_${month}.zip`,
+      content: zipBuffer,
+      contentType: 'application/zip'
+    }]
   })
 }
 

@@ -87,15 +87,9 @@ export async function createRazorpayLink(bill, customer) {
     description: `Milk Bill ${bill.id}`
   }, { headers })
 
-  const { error } = await supabase
-    .from('bills')
-    .update({
-      razorpay_link_id: res.data.linkId,
-      razorpay_short_url: res.data.shortUrl
-    })
-    .eq('id', bill.id)
-
-  if (error) throw error
+  // The backend route already writes razorpay_link_id/razorpay_short_url to this row
+  // (backend/routes/razorpay.js) before responding — repeating that write here was a
+  // second, pointless round trip on every single bill during bulk generation.
   return res.data.shortUrl
 }
 
@@ -245,26 +239,38 @@ export async function generateAllMonthlyBills(month, { withRazorpay = true, onPr
   }
 
   let i = 0
-  for (const { customer, entries, buttermilkData } of eligible) {
-    i++
-    onProgress?.({ step: 'bill', current: i, total: eligible.length, name: customer.name })
-    try {
-      const bill = await createBill(customer.id, start, end, entries, customer, buttermilkData)
-      results.created.push(bill)
+  // Each customer needs a bill insert plus, previously, a fully separate wait for the
+  // Razorpay link (an external API call) before moving to the next customer — for 45
+  // customers that's 45 sequential round trips of network + Razorpay latency stacked
+  // one after another. Processing a small batch concurrently cuts wall-clock time
+  // roughly in proportion to the batch size. 5 is conservative on purpose — Razorpay's
+  // create-link API has its own rate limit, and this still runs 5x faster than fully
+  // sequential without risking a burst of 45 simultaneous requests against it.
+  const BATCH_SIZE = 5
+  for (let batchStart = 0; batchStart < eligible.length; batchStart += BATCH_SIZE) {
+    const batch = eligible.slice(batchStart, batchStart + BATCH_SIZE)
+    await Promise.all(batch.map(async ({ customer, entries, buttermilkData }) => {
+      i++
+      const current = i
+      onProgress?.({ step: 'bill', current, total: eligible.length, name: customer.name })
+      try {
+        const bill = await createBill(customer.id, start, end, entries, customer, buttermilkData)
+        results.created.push(bill)
 
-      if (withRazorpay && Number(bill.total_amount) > 0) {
-        try {
-          onProgress?.({ step: 'razorpay', current: i, total: eligible.length, name: customer.name })
-          const url = await createRazorpayLink(bill, customer)
-          bill.razorpay_short_url = url
-          results.razorpay.push(bill.id)
-        } catch (err) {
-          results.errors.push({ customer: customer.name, error: 'Razorpay: ' + err.message })
+        if (withRazorpay && Number(bill.total_amount) > 0) {
+          try {
+            onProgress?.({ step: 'razorpay', current, total: eligible.length, name: customer.name })
+            const url = await createRazorpayLink(bill, customer)
+            bill.razorpay_short_url = url
+            results.razorpay.push(bill.id)
+          } catch (err) {
+            results.errors.push({ customer: customer.name, error: 'Razorpay: ' + err.message })
+          }
         }
+      } catch (err) {
+        results.errors.push({ customer: customer.name, error: err.message })
       }
-    } catch (err) {
-      results.errors.push({ customer: customer.name, error: err.message })
-    }
+    }))
   }
 
   return results

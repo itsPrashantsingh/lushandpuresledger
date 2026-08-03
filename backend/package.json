@@ -21,6 +21,7 @@
     "express": "^5.2.1",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
+    "jszip": "^3.10.1",
     "nodemailer": "^6.10.1",
     "razorpay": "^2.9.6"
   }
