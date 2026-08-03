@@ -25,6 +25,7 @@ export default function BillCard({
         <div>
           <h3 className="font-semibold text-slate-800">{bill.customers?.name || 'Customer'}</h3>
           {bill.customers?.customer_id && <p className="text-xs font-mono text-slate-400">{bill.customers.customer_id}</p>}
+          {bill.customers?.whatsapp_no && <p className="text-xs text-slate-500">+91 {bill.customers.whatsapp_no}</p>}
           <p className="text-sm text-slate-500">{bill.id} · {formatPeriod(bill.period_start, bill.period_end)}</p>
           {Number(bill.buttermilk_subtotal) > 0 && (
             <p className="text-xs text-purple-600">+ Buttermilk {formatCurrency(bill.buttermilk_subtotal)}</p>

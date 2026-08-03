@@ -233,7 +233,8 @@ export default function Bills() {
       const name = (b.customers?.name || '').toLowerCase()
       const cid = (b.customers?.customer_id || '').toLowerCase()
       const bid = (b.id || '').toLowerCase()
-      return name.includes(q) || cid.includes(q) || bid.includes(q)
+      const phone = (b.customers?.whatsapp_no || '').toLowerCase()
+      return name.includes(q) || cid.includes(q) || bid.includes(q) || phone.includes(q)
     })
   }
 
@@ -499,7 +500,7 @@ export default function Bills() {
 
       <input
         type="search"
-        placeholder="Search customer, ID or bill no…"
+        placeholder="Search customer, phone, ID or bill no…"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         className="w-full rounded-lg border px-4 py-2.5"

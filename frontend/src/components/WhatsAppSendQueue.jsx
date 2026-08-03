@@ -21,16 +21,27 @@ export default function WhatsAppSendQueue({ packages, onClose, onComplete }) {
     setAuto({ running: true, done: 0, sent: 0, failed: 0 })
     let ok = 0
     let fail = 0
-    for (let i = 0; i < packages.length; i++) {
-      const pkg = packages[i]
-      try {
-        const res = await sendBillViaApi(pkg.customer, pkg.entries, pkg.bill)
-        if (res.ok) ok++
-        else fail++
-      } catch {
-        fail++
-      }
-      setAuto({ running: true, done: i + 1, sent: ok, failed: fail })
+    let done = 0
+
+    // Each bill was going out fully one-at-a-time — PDF upload + a WhatsApp API round
+    // trip per bill, sequentially, for every bill in the batch. Sending a small batch
+    // concurrently cuts wall-clock time roughly in proportion to the batch size. 5 is
+    // conservative on purpose against the WhatsApp provider's own rate limit — each
+    // bill has a distinct entity id, so there's no dedupe/ordering risk in parallelizing.
+    const BATCH_SIZE = 5
+    for (let batchStart = 0; batchStart < packages.length; batchStart += BATCH_SIZE) {
+      const batch = packages.slice(batchStart, batchStart + BATCH_SIZE)
+      await Promise.all(batch.map(async (pkg) => {
+        try {
+          const res = await sendBillViaApi(pkg.customer, pkg.entries, pkg.bill)
+          if (res.ok) ok++
+          else fail++
+        } catch {
+          fail++
+        }
+        done++
+        setAuto({ running: true, done, sent: ok, failed: fail })
+      }))
     }
     onComplete?.({ sent: ok, skipped: fail, total: packages.length })
     onClose()

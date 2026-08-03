@@ -56,26 +56,34 @@ async function sendBillsFromItems(items) {
   let sent = 0
   let failed = 0
   const errors = []
-  for (const it of items) {
-    if (it.bill.paid || it.bill.sent_at) continue
-    const res = await sendMessage('bill', {
-      to: it.customer.whatsapp_no,
-      customerId: it.bill.customer_id,
-      entityId: it.bill.id,
-      name: it.customer.name,
-      period: `${it.bill.period_start} to ${it.bill.period_end}`,
-      amount: it.bill.total_amount,
-      payUrl: it.bill.razorpay_short_url || '',
-      documentUrl: it.publicUrl,
-      filename: it.filename
-    }, { dedupe: true })
-    if (res.ok) {
-      sent++
-      await supabase.from('bills').update({ sent_at: new Date().toISOString() }).eq('id', it.bill.id)
-    } else if (!res.skipped) {
-      failed++
-      errors.push({ bill: it.bill.id, error: res.error })
-    }
+
+  // Same batching as generateAllMonthlyBills — each send was a dedupe check + WhatsApp
+  // provider API call + log insert, fully sequential across every bill. Each bill has a
+  // distinct entity id, so dedupe is unaffected by running a small batch concurrently.
+  const BATCH_SIZE = 5
+  const toSend = items.filter((it) => !it.bill.paid && !it.bill.sent_at)
+  for (let batchStart = 0; batchStart < toSend.length; batchStart += BATCH_SIZE) {
+    const batch = toSend.slice(batchStart, batchStart + BATCH_SIZE)
+    await Promise.all(batch.map(async (it) => {
+      const res = await sendMessage('bill', {
+        to: it.customer.whatsapp_no,
+        customerId: it.bill.customer_id,
+        entityId: it.bill.id,
+        name: it.customer.name,
+        period: `${it.bill.period_start} to ${it.bill.period_end}`,
+        amount: it.bill.total_amount,
+        payUrl: it.bill.razorpay_short_url || '',
+        documentUrl: it.publicUrl,
+        filename: it.filename
+      }, { dedupe: true })
+      if (res.ok) {
+        sent++
+        await supabase.from('bills').update({ sent_at: new Date().toISOString() }).eq('id', it.bill.id)
+      } else if (!res.skipped) {
+        failed++
+        errors.push({ bill: it.bill.id, error: res.error })
+      }
+    }))
   }
   await recordRun('send', { sent, failed }, errors)
   return { sent, failed }
