@@ -1,6 +1,9 @@
+import JSZip from 'jszip'
 import { supabase } from './supabase'
 import { downloadWorkbook, downloadCsv } from './import-export'
 import { getMonthBounds, getBillStatus, fetchAllRows, formatQty } from './utils'
+import { getMonthlyBillPackages } from './bills'
+import { generateBill } from './pdf'
 
 export async function exportMilkProduction(startDate, endDate, format = 'xlsx') {
   const data = await fetchAllRows(() => supabase
@@ -178,6 +181,41 @@ export async function exportMonthlyBillStatus(month, format = 'xlsx') {
   if (format === 'csv') downloadCsv(filename, rows)
   else downloadWorkbook(filename, [{ name: 'Bill Status', rows }])
   return rows.length
+}
+
+/**
+ * Every bill PDF for a month, zipped into one download. Same PDF layout each customer's
+ * bill already uses (generateBill in ./pdf) — this just batches all of them client-side
+ * instead of opening/downloading one at a time, and mirrors the zip-instead-of-many-
+ * attachments fix already applied to the monthly email report (backend/lib/email/bill-report.js).
+ */
+export async function exportAllBillsZip(month) {
+  const packages = await getMonthlyBillPackages(month)
+  if (!packages.length) return 0
+
+  const zip = new JSZip()
+  const usedNames = new Set()
+  for (const pkg of packages) {
+    const doc = generateBill(pkg.customer, pkg.entries, pkg.bill)
+    const safeName = (pkg.customer?.name || 'customer').trim().replace(/\s+/g, '_')
+    const phone = pkg.customer?.whatsapp_no || ''
+    let filename = `${safeName}${phone ? `_${phone}` : ''}.pdf`
+    // Two customers can share a name (or, rarely, both be missing a saved number) —
+    // fall back to the bill id so one file never silently overwrites another in the zip.
+    if (usedNames.has(filename)) filename = `${safeName}${phone ? `_${phone}` : ''}_${pkg.bill.id}.pdf`
+    usedNames.add(filename)
+    zip.file(filename, doc.output('arraybuffer'))
+  }
+  const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' })
+
+  const url = URL.createObjectURL(zipBlob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `bills_${month}.zip`
+  a.click()
+  URL.revokeObjectURL(url)
+
+  return packages.length
 }
 
 export async function exportButtermilkProduction(startDate, endDate, format = 'xlsx') {

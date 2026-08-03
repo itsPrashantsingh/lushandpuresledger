@@ -19,7 +19,17 @@ function getTransport() {
       host: HOST,
       port: PORT,
       secure: SECURE,
-      auth: { user: USER, pass: PASS }
+      // On 587 (STARTTLS), nodemailer only upgrades to TLS if the server offers it and
+      // silently sends in plaintext otherwise — requireTLS makes that failure loud instead
+      // of silent. Meaningless on 465 (already TLS from the start), so only set it there.
+      ...(!SECURE ? { requireTLS: true } : {}),
+      auth: { user: USER, pass: PASS },
+      // Explicit rather than nodemailer's defaults, so a future failure's error message
+      // tells us which stage hung (TCP connect vs SMTP greeting vs mid-transfer) instead
+      // of a generic timeout after minutes of silence.
+      connectionTimeout: 20000,
+      greetingTimeout: 20000,
+      socketTimeout: 30000
     })
   }
   return transporter
