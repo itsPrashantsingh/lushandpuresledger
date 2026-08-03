@@ -196,7 +196,10 @@ export default function DailyEntry() {
     }
   }
 
-  const filtered = customers.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
+  const filtered = customers.filter((c) => {
+    const q = search.toLowerCase()
+    return c.name.toLowerCase().includes(q) || (c.whatsapp_no || '').includes(q)
+  })
   // A customer with a saved entry for this date belongs in the main list even if paused today —
   // otherwise a past day's deliveries would sit in the "auto-skipped, not billed" section while
   // still counting toward the day's total. Keeps the list consistent with the stats below.
@@ -268,7 +271,7 @@ export default function DailyEntry() {
 
       <input
         type="search"
-        placeholder="Search customer..."
+        placeholder="Search customer or phone..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         className="mb-3 w-full rounded-lg border px-4 py-2.5"
