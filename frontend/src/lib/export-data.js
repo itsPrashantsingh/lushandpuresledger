@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import { downloadWorkbook, downloadCsv } from './import-export'
-import { getMonthBounds, getBillStatus, fetchAllRows } from './utils'
+import { getMonthBounds, getBillStatus, fetchAllRows, formatQty } from './utils'
 
 export async function exportMilkProduction(startDate, endDate, format = 'xlsx') {
   const data = await fetchAllRows(() => supabase
@@ -121,6 +121,9 @@ export async function exportMonthlyBillStatus(month, format = 'xlsx') {
   for (const p of allPayments || []) {
     paidByBill[p.bill_id] = (paidByBill[p.bill_id] || 0) + Number(p.amount)
   }
+  // Rounded after accumulating — a bill with several partial payments can drift into
+  // floating-point noise (e.g. 1234.5600000000002) that would otherwise land in the sheet.
+  for (const billId of Object.keys(paidByBill)) paidByBill[billId] = formatQty(paidByBill[billId])
 
   // One row per customer who has a bill OR a delivery entry this period — this is the
   // union that matches what the Bills tab shows, regardless of current active/paused status.
@@ -129,8 +132,10 @@ export async function exportMonthlyBillStatus(month, format = 'xlsx') {
   const rows = [...relevantCustomerIds].map((customerId) => {
     const c = customerById[customerId]
     const entries = entriesByCustomer[customerId] || []
-    const totalLitres = entries.reduce((s, e) => s + Number(e.total_qty), 0)
-    const totalAmount = entries.reduce((s, e) => s + Number(e.amount), 0)
+    // Rounded — a month of entries reduced with += drifts into floating-point noise
+    // (e.g. 12.100000000000001), which would otherwise be written straight into the sheet.
+    const totalLitres = formatQty(entries.reduce((s, e) => s + Number(e.total_qty), 0))
+    const totalAmount = formatQty(entries.reduce((s, e) => s + Number(e.amount), 0))
 
     const bill = billsByCustomer[customerId]
     let billId = ''
@@ -149,7 +154,7 @@ export async function exportMonthlyBillStatus(month, format = 'xlsx') {
       totalBillAmount = Number(bill.total_amount || 0)
     }
 
-    const balance = totalBillAmount - paidAmount
+    const balance = formatQty(totalBillAmount - paidAmount)
     return {
       customer_id: c?.customer_id || '',
       customer_name: c?.name || '(deleted customer)',
@@ -243,22 +248,24 @@ export async function exportCustomerDeliveries(startDate, endDate, format = 'xls
   const rows = [...allCustomerIds].map((cid) => {
     const m = milkByCustomer[cid]
     const bm = bmByCustomer[cid]
-    const milkAmount = m?.milk_amount || 0
-    const bmAmount = bm?.amount || 0
-    const bmQty = bm?.qty || 0
+    // Rounded — a month of += accumulation drifts into floating-point noise (e.g.
+    // 12.100000000000001), which would otherwise land as-is in the exported sheet.
+    const milkAmount = formatQty(m?.milk_amount || 0)
+    const bmAmount = formatQty(bm?.amount || 0)
+    const bmQty = formatQty(bm?.qty || 0)
     return {
       customer_id: m?.customer_id || '',
       customer_name: m?.name || '',
       whatsapp_no: m?.whatsapp_no || '',
-      morning_litres: m?.morning_litres || 0,
-      evening_litres: m?.evening_litres || 0,
-      total_milk_litres: m?.total_milk_litres || 0,
+      morning_litres: formatQty(m?.morning_litres || 0),
+      evening_litres: formatQty(m?.evening_litres || 0),
+      total_milk_litres: formatQty(m?.total_milk_litres || 0),
       milk_rate: m ? ([...m.rates].length === 1 ? [...m.rates][0] : 'mixed') : '',
       milk_amount: milkAmount,
       buttermilk_litres: bmQty,
       buttermilk_rate: bmQty > 0 ? (bmAmount / bmQty).toFixed(2) : 0,
       buttermilk_amount: bmAmount,
-      total_amount: milkAmount + bmAmount
+      total_amount: formatQty(milkAmount + bmAmount)
     }
   }).sort((a, b) => a.customer_name.localeCompare(b.customer_name))
 

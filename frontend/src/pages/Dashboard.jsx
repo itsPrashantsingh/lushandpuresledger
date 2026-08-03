@@ -14,7 +14,8 @@ import {
   whatsappLink,
   getBillStatus,
   todayISO,
-  fetchAllRows
+  fetchAllRows,
+  formatQty
 } from '../lib/utils'
 import { getPaidAmountsForBills, markCashPayment, reconcileRazorpayPayments, wakeBackend } from '../lib/bills'
 import { buildPaymentDueMessage } from '../lib/messages'
@@ -383,7 +384,15 @@ export default function Dashboard() {
       byDate[e.date].evening += Number(e.evening_litres)
       byDate[e.date].total += Number(e.total_litres)
     }
-    setMilkChart(days.map((d) => ({ day: d.label, morning: byDate[d.date]?.morning || 0, evening: byDate[d.date]?.evening || 0, total: byDate[d.date]?.total || 0 })))
+    // formatQty rounds off the binary floating-point drift that repeated += accumulation
+    // produces (e.g. 1.1 + 1.2 + 4.5 → 12.100000000000001) — without it the chart tooltip
+    // shows that raw artifact instead of a clean litres figure.
+    setMilkChart(days.map((d) => ({
+      day: d.label,
+      morning: formatQty(byDate[d.date]?.morning || 0),
+      evening: formatQty(byDate[d.date]?.evening || 0),
+      total: formatQty(byDate[d.date]?.total || 0)
+    })))
   }, [milkChartCattle, rawMilkChart30])
 
   // Daily customer-delivery chart (morning+evening L per day) for the selected month
@@ -404,13 +413,15 @@ export default function Dashboard() {
     for (let d = 1; d <= daysInMonth; d++) {
       const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
       const v = byDate[dateStr]
+      // formatQty rounds off += accumulation drift (e.g. 12.100000000000001) before it
+      // reaches the chart/heatmap — see the same fix in the milk-production chart above.
       arr.push({
         day: String(d),
         date: dateStr,
-        morning: v?.morning || 0,
-        evening: v?.evening || 0,
-        total: (v?.morning || 0) + (v?.evening || 0),
-        amount: v?.amount || 0,
+        morning: formatQty(v?.morning || 0),
+        evening: formatQty(v?.evening || 0),
+        total: formatQty((v?.morning || 0) + (v?.evening || 0)),
+        amount: formatQty(v?.amount || 0),
         customers: v?.customers || 0,
         // daily_entries rows are written ONLY by the /finalize endpoint, so their
         // presence is a reliable signal that the day's final save happened.
@@ -832,7 +843,7 @@ export default function Dashboard() {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="day" tick={{ fontSize: 9 }} interval={4} />
               <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip />
+              <Tooltip formatter={(v, name) => [`${Number(v).toFixed(1)} L`, name]} />
               <Bar dataKey="morning" stackId="a" fill="#3b82f6" name="Morning (L)" />
               <Bar dataKey="evening" stackId="a" fill="#8b5cf6" name="Evening (L)" />
             </BarChart>

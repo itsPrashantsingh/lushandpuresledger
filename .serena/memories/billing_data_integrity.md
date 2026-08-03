@@ -230,6 +230,20 @@ Backup: `_backup_jul_phantom_round2`. This time both `daily_entries` AND `daily_
 were corrected, so it should not regenerate again. Jul 16 now 36 customers/40.0L, Jul 18 now
 35 customers/40.5L — both in line with neighbouring days (33–37 range).
 
+## FIXED (2026-08-03): future-dated cattle production inflated Supply vs Production
+18 rows in `cattle_milk_entries` dated **2026-08-29/30/31** — inserted 2026-08-01 01:21-01:23
+UTC by `yashpal2409@gmail.com`, all 6 cattle, three back-to-back batches ~1 min apart. Made
+Dashboard's "Supply vs Production" show **Total Produced 151.5 L** for August when only 2 real
+days existed (59.5 L). Root cause: `MilkProduction.jsx`'s date `<input type="date">` had no
+upper bound, so the native picker allowed any future date. Same gap existed on
+`DailyEntry.jsx` (customer deliveries — worse, since finalizing there creates real billable
+`daily_entries` rows for a date that can't exist yet) and `Bills.jsx` cash-payment date (a
+payment can't be received in the future). Backed up to `_backup_aug_future_dated_production`,
+then deleted; August now correctly reads 59.5 L. Added `max={todayISO()}` to all three date
+inputs. Note: `max` is a browser-level deterrent (blocks the native picker), not a hard
+server-side guarantee — someone could still type past it in a permissive browser. No backend
+validation was added to reject future dates on insert; consider that if this recurs.
+
 ## Payment attribution model (intentional)
 Bills-page per-method totals and Dashboard revenue attribute money by **bill period**
 (`bills.period_start`), NOT by `payments.paid_at`. A June bill paid in July counts toward JUNE.

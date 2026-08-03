@@ -162,7 +162,10 @@ export default function MilkProduction() {
           <h1 className="text-xl font-bold text-slate-800">Milk Production</h1>
           <p className="text-xs text-slate-500">Morning & evening litres per cattle</p>
         </div>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="rounded-lg border px-3 py-2 text-sm" />
+        {/* max blocks future dates — production for a day that hasn't happened yet is
+            impossible; 18 such rows (Aug 29-31) were entered by mistake and inflated
+            "Total Produced" by 92L before this guard existed. */}
+        <input type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} className="rounded-lg border px-3 py-2 text-sm" />
       </div>
 
       {cattle.length === 0 ? (

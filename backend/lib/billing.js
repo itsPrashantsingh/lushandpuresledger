@@ -29,12 +29,19 @@ async function fetchAllRows(makeQuery) {
   return all
 }
 
+// Mirrors frontend/src/lib/utils.js formatQty — rounds off the binary floating-point
+// drift that repeated += accumulation produces (e.g. 12.100000000000001), which would
+// otherwise get written as-is into bills.subtotal / total_litres / buttermilk_* columns.
+function round2(n) {
+  return parseFloat((Number(n) || 0).toFixed(2))
+}
+
 function billableEntries(entries) {
   return (entries || []).filter((e) => Number(e.total_qty) > 0 && Number(e.amount) > 0)
 }
 
 function entrySubtotal(entries) {
-  return billableEntries(entries).reduce((s, e) => s + Number(e.amount), 0)
+  return round2(billableEntries(entries).reduce((s, e) => s + Number(e.amount), 0))
 }
 
 async function generateBillId() {
@@ -51,14 +58,14 @@ async function getPaidAmountForBill(billId) {
 async function createBill(customerId, periodStart, periodEnd, entries, buttermilkData = null) {
   const valid = billableEntries(entries)
   const milkSubtotal = entrySubtotal(valid)
-  const buttermilkQty = buttermilkData?.totalQty || 0
-  const buttermilkSubtotal = buttermilkData?.subtotal || 0
+  const buttermilkQty = round2(buttermilkData?.totalQty || 0)
+  const buttermilkSubtotal = round2(buttermilkData?.subtotal || 0)
 
   if (valid.length === 0 && buttermilkSubtotal <= 0) throw new Error('No deliveries with quantity')
   if (milkSubtotal <= 0 && buttermilkSubtotal <= 0) throw new Error('Bill amount is zero')
 
-  const totalLitres = valid.reduce((s, e) => s + Number(e.total_qty), 0)
-  const combinedSubtotal = milkSubtotal + buttermilkSubtotal
+  const totalLitres = round2(valid.reduce((s, e) => s + Number(e.total_qty), 0))
+  const combinedSubtotal = round2(milkSubtotal + buttermilkSubtotal)
   const gst = calculateGst(combinedSubtotal)
   const billId = await generateBillId()
 

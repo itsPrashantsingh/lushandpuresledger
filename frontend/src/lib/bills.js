@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import axios from 'axios'
-import { getMonthBounds, getBillStatus, fetchAllRows } from './utils'
+import { getMonthBounds, getBillStatus, fetchAllRows, formatQty } from './utils'
 import { calculateGst } from './gst'
 import { BACKEND_URL, API_KEY } from './constants'
 
@@ -10,7 +10,10 @@ export function billableEntries(entries) {
 }
 
 export function entrySubtotal(entries) {
-  return billableEntries(entries).reduce((s, e) => s + Number(e.amount), 0)
+  // Rounded — repeated += across a month's entries drifts into binary floating-point noise
+  // (e.g. 1234.5600000000002), which would otherwise get stored as-is in bills.subtotal
+  // (calculateGst only rounds the GST-inclusive total, not the subtotal it's given).
+  return formatQty(billableEntries(entries).reduce((s, e) => s + Number(e.amount), 0))
 }
 
 export async function generateBillId() {
@@ -22,8 +25,8 @@ export async function generateBillId() {
 export async function createBill(customerId, periodStart, periodEnd, entries, customer = null, buttermilkData = null) {
   const valid = billableEntries(entries)
   const milkSubtotal = entrySubtotal(valid)
-  const buttermilkQty = buttermilkData?.totalQty || 0
-  const buttermilkSubtotal = buttermilkData?.subtotal || 0
+  const buttermilkQty = formatQty(buttermilkData?.totalQty || 0)
+  const buttermilkSubtotal = formatQty(buttermilkData?.subtotal || 0)
 
   if (valid.length === 0 && buttermilkSubtotal <= 0) {
     throw new Error('No deliveries with quantity — cannot create bill')
@@ -32,8 +35,11 @@ export async function createBill(customerId, periodStart, periodEnd, entries, cu
     throw new Error('Bill amount is zero — cannot create bill')
   }
 
-  const totalLitres = valid.reduce((s, e) => s + Number(e.total_qty), 0)
-  const combinedSubtotal = milkSubtotal + buttermilkSubtotal
+  // Rounded here regardless of whether the caller's inputs were already clean — this is
+  // the single write path to bills.subtotal/total_litres, so it's the right choke point
+  // to stop += drift from ever reaching the database.
+  const totalLitres = formatQty(valid.reduce((s, e) => s + Number(e.total_qty), 0))
+  const combinedSubtotal = formatQty(milkSubtotal + buttermilkSubtotal)
   const gst = calculateGst(combinedSubtotal)
   const billId = await generateBillId()
 
@@ -201,6 +207,12 @@ export async function generateAllMonthlyBills(month, { withRazorpay = true, onPr
     if (!buttermilkByCustomer[b.customer_id]) buttermilkByCustomer[b.customer_id] = { totalQty: 0, subtotal: 0 }
     buttermilkByCustomer[b.customer_id].totalQty += Number(b.quantity)
     buttermilkByCustomer[b.customer_id].subtotal += Number(b.amount)
+  }
+  // Rounded after accumulating — same += drift as entrySubtotal, and this feeds
+  // bills.buttermilk_total_qty / buttermilk_subtotal directly.
+  for (const bm of Object.values(buttermilkByCustomer)) {
+    bm.totalQty = formatQty(bm.totalQty)
+    bm.subtotal = formatQty(bm.subtotal)
   }
 
   const billedCustomers = new Set((existingBills || []).map((b) => b.customer_id))

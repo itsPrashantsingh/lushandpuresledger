@@ -562,7 +562,8 @@ export default function Bills() {
             <label className="mt-3 block text-xs text-slate-500">Amount</label>
             <input type="number" value={cashAmount} onChange={(e) => setCashAmount(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" />
             <label className="mt-3 block text-xs text-slate-500">Payment Date</label>
-            <input type="date" value={cashPaidAt} onChange={(e) => setCashPaidAt(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" />
+            {/* max blocks future dates — a payment can't have been received yet */}
+            <input type="date" value={cashPaidAt} max={todayISO()} onChange={(e) => setCashPaidAt(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" />
             <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
               <input type="checkbox" checked={sendAck} onChange={(e) => setSendAck(e.target.checked)} className="rounded" />
               Send WhatsApp acknowledgement

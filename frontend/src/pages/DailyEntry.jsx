@@ -247,7 +247,9 @@ export default function DailyEntry() {
         </div>
         <div className="flex items-center gap-2">
           <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusClass}`}>{statusText}</span>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="rounded-lg border px-3 py-2 text-sm" />
+          {/* max blocks future dates — a finalized delivery for a day that hasn't happened
+              would create real billable daily_entries rows for a date that can't yet exist. */}
+          <input type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} className="rounded-lg border px-3 py-2 text-sm" />
         </div>
       </div>
 
