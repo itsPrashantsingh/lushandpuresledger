@@ -59,6 +59,15 @@ export function todayISO() {
   return new Date().toISOString().slice(0, 10)
 }
 
+/** Tomorrow's date — Daily Entry deliberately allows entering one day ahead (customers
+ * with known next-day quantities get locked in a day early), while still blocking
+ * further-out future dates, which was a real incident (see billing_data_integrity memory). */
+export function tomorrowISO() {
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
+
 /**
  * Fetch EVERY row of a Supabase query, 1000 at a time.
  *

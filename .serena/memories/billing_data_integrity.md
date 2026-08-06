@@ -244,6 +244,21 @@ inputs. Note: `max` is a browser-level deterrent (blocks the native picker), not
 server-side guarantee — someone could still type past it in a permissive browser. No backend
 validation was added to reject future dates on insert; consider that if this recurs.
 
+Relaxed on 2026-08-06, DailyEntry.jsx only: changed to max={tomorrowISO()} per explicit user
+request — staff legitimately know some customers' next-day quantities in advance and want to
+enter + lock them a day early. MilkProduction.jsx and Bills.jsx cash-payment date were
+deliberately left at max={todayISO()}; the user only asked to relax the customer-delivery case.
+tomorrowISO() added to frontend/src/lib/utils.js.
+
+## FIXED (2026-08-06): RLS disabled on session's own backup snapshot tables
+Supabase flagged rls_disabled_in_public (critical) on all 7 _backup_* tables created during
+this session's incident cleanups. create table ... as select does not inherit RLS from the
+source table, so these were readable/writable by anyone with the project's anon key. No real
+app table was affected; all already had RLS enabled correctly.
+Fix: alter table ... enable row level security on all 7, no policies added — locks them to
+service-role-only, anon/authenticated get zero access. Any future create-table-as-select
+backup must get the same treatment immediately, not left until the next security audit.
+
 ## Payment attribution model (intentional)
 Bills-page per-method totals and Dashboard revenue attribute money by **bill period**
 (`bills.period_start`), NOT by `payments.paid_at`. A June bill paid in July counts toward JUNE.

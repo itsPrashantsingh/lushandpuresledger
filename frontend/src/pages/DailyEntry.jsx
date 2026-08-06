@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { todayISO, formatCurrency } from '../lib/utils'
+import { todayISO, tomorrowISO, formatCurrency } from '../lib/utils'
 import Toast from '../components/Toast'
 import QtyControl from '../components/QtyControl'
 import { apiGet, apiPost } from '../lib/api'
@@ -250,9 +250,10 @@ export default function DailyEntry() {
         </div>
         <div className="flex items-center gap-2">
           <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusClass}`}>{statusText}</span>
-          {/* max blocks future dates — a finalized delivery for a day that hasn't happened
-              would create real billable daily_entries rows for a date that can't yet exist. */}
-          <input type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} className="rounded-lg border px-3 py-2 text-sm" />
+          {/* max allows one day ahead — customers with known next-day quantities get
+              entered and locked a day early — but still blocks further-out future dates,
+              which is how 92L of impossible cattle-production data got entered by mistake. */}
+          <input type="date" value={date} max={tomorrowISO()} onChange={(e) => setDate(e.target.value)} className="rounded-lg border px-3 py-2 text-sm" />
         </div>
       </div>
 
