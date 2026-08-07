@@ -59,12 +59,13 @@ export function todayISO() {
   return new Date().toISOString().slice(0, 10)
 }
 
-/** Tomorrow's date — Daily Entry deliberately allows entering one day ahead (customers
- * with known next-day quantities get locked in a day early), while still blocking
- * further-out future dates, which was a real incident (see billing_data_integrity memory). */
-export function tomorrowISO() {
+/** Furthest date Daily Entry allows entering — staff know some customers' quantities up to
+ * a week ahead and lock them in early, but this still blocks further-out future dates,
+ * which was a real incident (92L of impossible cattle-production data — see
+ * billing_data_integrity memory). Bump the day count here if the lookahead needs to change. */
+export function maxDailyEntryDateISO() {
   const d = new Date()
-  d.setDate(d.getDate() + 1)
+  d.setDate(d.getDate() + 7)
   return d.toISOString().slice(0, 10)
 }
 
